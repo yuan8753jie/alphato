@@ -5,7 +5,7 @@ export default defineConfig({
   timeout: 60000,
   use: {
     baseURL: "http://localhost:3000",
-    headless: true,
+    headless: false,
   },
   webServer: {
     command: "npm run dev",
