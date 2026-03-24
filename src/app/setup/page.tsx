@@ -28,6 +28,8 @@ export default function SetupPage() {
   const [account, setAccount] = useState<Account>(emptyAccount);
   const [ruleInput, setRuleInput] = useState("");
   const [saved, setSaved] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [extractResult, setExtractResult] = useState<string | null>(null);
 
   useEffect(() => {
     const existing = getAccount();
@@ -135,6 +137,55 @@ export default function SetupPage() {
     }));
   }
 
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setExtracting(true);
+    setExtractResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/extract-brand", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (data.success && data.extracted) {
+        const ext = data.extracted;
+        // Auto-fill fields that have extracted values
+        setAccount((prev) => ({
+          ...prev,
+          brand: {
+            name: ext.brandName || prev.brand.name,
+            industry: ext.industry || prev.brand.industry,
+            tone: ext.tone
+              ? prev.brand.tone
+                ? prev.brand.tone + "\n\n---（AI 从图片提取）---\n" + ext.tone
+                : ext.tone
+              : prev.brand.tone,
+            rules: ext.rules?.length
+              ? [...prev.brand.rules, ...ext.rules.filter((r: string) => !prev.brand.rules.includes(r))]
+              : prev.brand.rules,
+          },
+        }));
+        setExtractResult(ext.summary || "提取完成，已自动填入对应字段");
+      } else {
+        setExtractResult("提取失败：" + (data.error || "未知错误"));
+      }
+    } catch (err) {
+      setExtractResult("请求失败：" + String(err));
+    } finally {
+      setExtracting(false);
+      // Reset file input
+      e.target.value = "";
+    }
+  }
+
   function handleSave() {
     saveAccount(account);
     setSaved(true);
@@ -166,6 +217,38 @@ export default function SetupPage() {
 
           {/* 品牌信息 */}
           <TabsContent value="brand">
+            {/* 上传品牌资料 */}
+            <Card className="mb-4">
+              <CardHeader>
+                <CardTitle>上传品牌资料</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-3">
+                  上传品牌手册、规范文档等图片，AI 会自动识别并提取品牌信息填入下方表单
+                </p>
+                <div className="flex items-center gap-3">
+                  <label className="cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={handleFileUpload}
+                      disabled={extracting}
+                    />
+                    <span className="inline-flex items-center justify-center rounded-md text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2">
+                      {extracting ? "AI 识别中..." : "选择图片上传"}
+                    </span>
+                  </label>
+                  <span className="text-xs text-muted-foreground">支持 PNG、JPEG、WebP</span>
+                </div>
+                {extractResult && (
+                  <div className="mt-3 p-3 bg-muted rounded-md text-sm whitespace-pre-wrap max-h-48 overflow-y-auto">
+                    {extractResult}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle>品牌基础信息</CardTitle>
