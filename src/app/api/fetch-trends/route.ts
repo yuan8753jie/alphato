@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { geminiRequest, extractTextFromResponse } from "@/lib/gemini";
 import type { TrendCategory } from "@/lib/types";
 
+const VALID_CATEGORIES = new Set<string>([
+  "platform_hot", "industry_news", "social_meme",
+  "sports_event", "entertainment", "holiday_calendar",
+  "brand_related", "trivia", "history_today",
+]);
+
+function normalizeCategory(raw: unknown, fallback: TrendCategory): TrendCategory {
+  if (typeof raw === "string" && VALID_CATEGORIES.has(raw)) return raw as TrendCategory;
+  return fallback;
+}
+
 export const maxDuration = 120;
 
 interface SearchRound {
@@ -144,7 +155,7 @@ export async function POST(req: NextRequest) {
           id: `trend_${round.categories[0]}_${Date.now()}_${i}`,
           title: t.title || "",
           description: t.description || "",
-          category: t.category || round.categories[0],
+          category: normalizeCategory(t.category, round.categories[0]),
           source: t.source || "",
           heatScore: t.heatScore || 5,
           relevance: t.relevance || "",
