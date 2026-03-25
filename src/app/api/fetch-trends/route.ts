@@ -152,7 +152,7 @@ export async function POST(req: NextRequest) {
         const text = extractTextFromResponse(data);
         const parsed = parseTrendsFromText(text);
         return parsed.map((t: Record<string, unknown>, i: number) => ({
-          id: `trend_${round.categories[0]}_${Date.now()}_${i}`,
+          id: `trend_${round.categories[0]}_${crypto.randomUUID().slice(0, 8)}_${i}`,
           title: t.title || "",
           description: t.description || "",
           category: normalizeCategory(t.category, round.categories[0]),
