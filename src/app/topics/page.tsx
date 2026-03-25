@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 import { getAccount, getTopics, saveTopics } from "@/lib/store";
 import type { Account, Topic, TopicStatus } from "@/lib/types";
 
@@ -213,7 +214,12 @@ export default function TopicsPage() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 space-y-2">
                       <div className="flex items-center gap-2">
-                        <h3 className="font-semibold">{topic.title}</h3>
+                        <Link
+                          href={`/topics/${topic.id}`}
+                          className="font-semibold hover:underline"
+                        >
+                          {topic.title}
+                        </Link>
                         <Badge variant={STATUS_CONFIG[topic.status].variant}>
                           {STATUS_CONFIG[topic.status].label}
                         </Badge>
