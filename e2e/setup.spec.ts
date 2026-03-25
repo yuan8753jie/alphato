@@ -25,19 +25,25 @@ test.describe("账号工作区", () => {
   test("上传品牌资料图片并调用 Gemini 提取", async ({ page }) => {
     await page.goto("/setup");
 
+    // Select purpose
+    await page.locator("select").first().selectOption("product_info");
+
     // Upload test image
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles(
       path.join(__dirname, "../public/test-assets/nano-banana-test.jpg")
     );
 
-    // Wait for extraction (may take a while due to API call)
-    await expect(page.locator("text=AI 识别中...")).toBeVisible();
+    // Wait for extraction
+    await expect(page.getByText("识别中...", { exact: true })).toBeVisible();
 
     // Wait for result (up to 30s for Gemini API)
     await expect(
-      page.locator(".bg-muted.rounded-md")
+      page.locator(".bg-muted.rounded.text-xs")
     ).toBeVisible({ timeout: 30000 });
+
+    // Verify file appears in the list
+    await expect(page.locator("text=nano-banana-test.jpg")).toBeVisible();
   });
 
   test("保存后首页显示账号信息", async ({ page }) => {

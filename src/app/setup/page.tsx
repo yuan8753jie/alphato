@@ -11,13 +11,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { saveAccount, getAccount } from "@/lib/store";
-import type { Account, Product, Persona, BenchmarkAccount } from "@/lib/types";
+import type { Account, Product, Persona, BenchmarkAccount, BrandMaterial, MaterialPurpose } from "@/lib/types";
+import { MATERIAL_PURPOSE_LABELS } from "@/lib/types";
 
 const emptyAccount: Account = {
   name: "",
   platform: "douyin",
   accountUrl: "",
   brand: { name: "", tone: "", rules: [], industry: "" },
+  brandMaterials: [],
   products: [],
   personas: [],
   benchmarkAccounts: [],
@@ -28,8 +30,8 @@ export default function SetupPage() {
   const [account, setAccount] = useState<Account>(emptyAccount);
   const [ruleInput, setRuleInput] = useState("");
   const [saved, setSaved] = useState(false);
-  const [extracting, setExtracting] = useState(false);
-  const [extractResult, setExtractResult] = useState<string | null>(null);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [uploadPurpose, setUploadPurpose] = useState<MaterialPurpose>("brand_guide");
 
   useEffect(() => {
     const existing = getAccount();
@@ -138,52 +140,88 @@ export default function SetupPage() {
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    setExtracting(true);
-    setExtractResult(null);
+    for (const file of Array.from(files)) {
+      const tempId = crypto.randomUUID();
+      const newMaterial: BrandMaterial = {
+        id: tempId,
+        fileName: file.name,
+        purpose: uploadPurpose,
+        extractedText: "",
+        uploadedAt: new Date().toISOString(),
+      };
 
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
+      setAccount((prev) => ({
+        ...prev,
+        brandMaterials: [...prev.brandMaterials, newMaterial],
+      }));
 
-      const res = await fetch("/api/extract-brand", {
-        method: "POST",
-        body: formData,
-      });
+      setUploadingId(tempId);
 
-      const data = await res.json();
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
 
-      if (data.success && data.extracted) {
-        const ext = data.extracted;
-        // Auto-fill fields that have extracted values
+        const res = await fetch("/api/extract-brand", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await res.json();
+
+        if (data.success && data.extracted) {
+          const ext = data.extracted;
+          const summary = ext.summary || JSON.stringify(ext, null, 2);
+
+          setAccount((prev) => ({
+            ...prev,
+            brandMaterials: prev.brandMaterials.map((m) =>
+              m.id === tempId ? { ...m, extractedText: summary } : m
+            ),
+          }));
+        } else {
+          setAccount((prev) => ({
+            ...prev,
+            brandMaterials: prev.brandMaterials.map((m) =>
+              m.id === tempId
+                ? { ...m, extractedText: "提取失败：" + (data.error || "未知错误") }
+                : m
+            ),
+          }));
+        }
+      } catch (err) {
         setAccount((prev) => ({
           ...prev,
-          brand: {
-            name: ext.brandName || prev.brand.name,
-            industry: ext.industry || prev.brand.industry,
-            tone: ext.tone
-              ? prev.brand.tone
-                ? prev.brand.tone + "\n\n---（AI 从图片提取）---\n" + ext.tone
-                : ext.tone
-              : prev.brand.tone,
-            rules: ext.rules?.length
-              ? [...prev.brand.rules, ...ext.rules.filter((r: string) => !prev.brand.rules.includes(r))]
-              : prev.brand.rules,
-          },
+          brandMaterials: prev.brandMaterials.map((m) =>
+            m.id === tempId
+              ? { ...m, extractedText: "请求失败：" + String(err) }
+              : m
+          ),
         }));
-        setExtractResult(ext.summary || "提取完成，已自动填入对应字段");
-      } else {
-        setExtractResult("提取失败：" + (data.error || "未知错误"));
+      } finally {
+        setUploadingId(null);
       }
-    } catch (err) {
-      setExtractResult("请求失败：" + String(err));
-    } finally {
-      setExtracting(false);
-      // Reset file input
-      e.target.value = "";
     }
+
+    e.target.value = "";
+  }
+
+  function updateMaterialPurpose(id: string, purpose: MaterialPurpose) {
+    setAccount((prev) => ({
+      ...prev,
+      brandMaterials: prev.brandMaterials.map((m) =>
+        m.id === id ? { ...m, purpose } : m
+      ),
+    }));
+  }
+
+  function removeMaterial(id: string) {
+    setAccount((prev) => ({
+      ...prev,
+      brandMaterials: prev.brandMaterials.filter((m) => m.id !== id),
+    }));
   }
 
   function handleSave() {
@@ -220,30 +258,74 @@ export default function SetupPage() {
             {/* 上传品牌资料 */}
             <Card className="mb-4">
               <CardHeader>
-                <CardTitle>上传品牌资料</CardTitle>
+                <CardTitle>品牌资料库</CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-3">
-                  上传品牌手册、规范文档等图片，AI 会自动识别并提取品牌信息填入下方表单
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  上传品牌手册、产品资料等图片，AI 自动识别内容。支持多个文件，每个可指定用途。
                 </p>
                 <div className="flex items-center gap-3">
+                  <select
+                    className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
+                    value={uploadPurpose}
+                    onChange={(e) => setUploadPurpose(e.target.value as MaterialPurpose)}
+                  >
+                    {Object.entries(MATERIAL_PURPOSE_LABELS).map(([key, label]) => (
+                      <option key={key} value={key}>{label}</option>
+                    ))}
+                  </select>
                   <label className="cursor-pointer">
                     <input
                       type="file"
                       accept="image/png,image/jpeg,image/webp"
                       className="hidden"
                       onChange={handleFileUpload}
-                      disabled={extracting}
+                      disabled={!!uploadingId}
+                      multiple
                     />
                     <span className="inline-flex items-center justify-center rounded-md text-sm font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-4 py-2">
-                      {extracting ? "AI 识别中..." : "选择图片上传"}
+                      {uploadingId ? "AI 识别中..." : "选择图片"}
                     </span>
                   </label>
-                  <span className="text-xs text-muted-foreground">支持 PNG、JPEG、WebP</span>
+                  <span className="text-xs text-muted-foreground">支持多选，PNG / JPEG / WebP</span>
                 </div>
-                {extractResult && (
-                  <div className="mt-3 p-3 bg-muted rounded-md text-sm whitespace-pre-wrap max-h-48 overflow-y-auto">
-                    {extractResult}
+
+                {account.brandMaterials.length > 0 && (
+                  <div className="space-y-3 mt-4">
+                    {account.brandMaterials.map((material) => (
+                      <div key={material.id} className="border rounded-lg p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{material.fileName}</span>
+                            <select
+                              className="h-7 rounded border border-input bg-transparent px-2 text-xs"
+                              value={material.purpose}
+                              onChange={(e) => updateMaterialPurpose(material.id, e.target.value as MaterialPurpose)}
+                            >
+                              {Object.entries(MATERIAL_PURPOSE_LABELS).map(([key, label]) => (
+                                <option key={key} value={key}>{label}</option>
+                              ))}
+                            </select>
+                            {uploadingId === material.id && (
+                              <Badge variant="secondary">识别中...</Badge>
+                            )}
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive"
+                            onClick={() => removeMaterial(material.id)}
+                          >
+                            删除
+                          </Button>
+                        </div>
+                        {material.extractedText && (
+                          <div className="p-2 bg-muted rounded text-xs whitespace-pre-wrap max-h-32 overflow-y-auto">
+                            {material.extractedText}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </CardContent>

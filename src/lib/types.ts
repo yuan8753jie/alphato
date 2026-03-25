@@ -16,6 +16,33 @@ export interface BenchmarkAccount {
   notes: string;
 }
 
+export type MaterialPurpose =
+  | "brand_guide"      // 品牌手册
+  | "product_info"     // 产品资料
+  | "visual_standard"  // 视觉规范
+  | "campaign_brief"   // 营销规划
+  | "competitor"       // 竞品分析
+  | "audience_research" // 受众调研
+  | "other";           // 其他
+
+export const MATERIAL_PURPOSE_LABELS: Record<MaterialPurpose, string> = {
+  brand_guide: "品牌手册",
+  product_info: "产品资料",
+  visual_standard: "视觉规范",
+  campaign_brief: "营销规划",
+  competitor: "竞品分析",
+  audience_research: "受众调研",
+  other: "其他",
+};
+
+export interface BrandMaterial {
+  id: string;
+  fileName: string;
+  purpose: MaterialPurpose;
+  extractedText: string;
+  uploadedAt: string;
+}
+
 export interface Brand {
   name: string;
   tone: string;
@@ -28,6 +55,7 @@ export interface Account {
   platform: "douyin" | "tiktok" | "xiaohongshu" | "instagram" | "kuaishou" | "wechat" | "youtube" | "bilibili";
   accountUrl: string;
   brand: Brand;
+  brandMaterials: BrandMaterial[];
   products: Product[];
   personas: Persona[];
   benchmarkAccounts: BenchmarkAccount[];
