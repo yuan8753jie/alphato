@@ -1,4 +1,4 @@
-import { AppData, Account, Topic, Script } from "./types";
+import { AppData, Account, Topic, Script, Trend } from "./types";
 
 const STORAGE_KEY = "alphato_data";
 
@@ -6,6 +6,8 @@ const defaultData: AppData = {
   account: null,
   topics: [],
   scripts: [],
+  trends: [],
+  trendsDate: null,
 };
 
 export function loadData(): AppData {
@@ -57,4 +59,23 @@ export function saveScript(script: Script): void {
 
 export function getScripts(): Script[] {
   return loadData().scripts;
+}
+
+export function saveTrends(trends: Trend[]): void {
+  const data = loadData();
+  data.trends = trends;
+  data.trendsDate = new Date().toISOString().split("T")[0];
+  saveData(data);
+}
+
+export function getTrends(): { trends: Trend[]; date: string | null } {
+  const data = loadData();
+  return { trends: data.trends || [], date: data.trendsDate || null };
+}
+
+export function isTrendsStale(): boolean {
+  const { date } = getTrends();
+  if (!date) return true;
+  const today = new Date().toISOString().split("T")[0];
+  return date !== today;
 }

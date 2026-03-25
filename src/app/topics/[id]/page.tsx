@@ -70,13 +70,12 @@ export default function TopicDetailPage() {
   if (!topic || !account) return null;
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto py-8 px-4">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <Button onClick={() => router.push("/topics")} variant="outline">
-            返回选题列表
-          </Button>
+    <div>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <Button onClick={() => router.push("/topics")} variant="outline" size="sm">
+          返回选题列表
+        </Button>
         </div>
 
         {/* Topic info */}
@@ -218,7 +217,6 @@ export default function TopicDetailPage() {
             )}
           </div>
         )}
-      </div>
     </div>
   );
 }

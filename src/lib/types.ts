@@ -89,8 +89,18 @@ export interface ScriptScene {
   text: string;
 }
 
+export interface Trend {
+  title: string;
+  description: string;
+  source?: string;
+  heatScore?: number;
+  relevance?: string;
+}
+
 export interface AppData {
   account: Account | null;
   topics: Topic[];
   scripts: Script[];
+  trends: Trend[];
+  trendsDate: string | null; // YYYY-MM-DD, tracks when trends were fetched
 }

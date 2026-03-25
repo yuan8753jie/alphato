@@ -4,7 +4,7 @@ import path from "path";
 test.describe("账号工作区", () => {
   test("首页能加载", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("h1")).toContainText("AlphaTo");
+    await expect(page.locator("h1")).toContainText("工作台");
   });
 
   test("setup 页面能加载并保存", async ({ page }) => {

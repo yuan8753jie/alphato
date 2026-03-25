@@ -233,19 +233,15 @@ export default function SetupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto py-8 px-4">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-bold">账号工作区设置</h1>
-            <p className="text-muted-foreground mt-1">
-              配置品牌信息、产品、目标受众，为 AI 创作提供上下文
-            </p>
-          </div>
-          <Button onClick={() => router.push("/")} variant="outline">
-            返回首页
-          </Button>
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">账号工作区设置</h1>
+          <p className="text-muted-foreground mt-1">
+            配置品牌信息、产品、目标受众，为 AI 创作提供上下文
+          </p>
         </div>
+      </div>
 
         <Tabs defaultValue="brand" className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
@@ -639,14 +635,13 @@ export default function SetupPage() {
           </TabsContent>
         </Tabs>
 
-        <div className="flex items-center justify-end gap-3 mt-8">
-          {saved && (
-            <span className="text-sm text-green-600">已保存</span>
-          )}
-          <Button onClick={handleSave} size="lg">
-            保存设置
-          </Button>
-        </div>
+      <div className="flex items-center justify-end gap-3 mt-8">
+        {saved && (
+          <span className="text-sm text-green-600">已保存</span>
+        )}
+        <Button onClick={handleSave} size="lg">
+          保存设置
+        </Button>
       </div>
     </div>
   );

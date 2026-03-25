@@ -2,12 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import Link from "next/link";
-import { getAccount, getTopics, saveTopics } from "@/lib/store";
-import type { Account, Topic, TopicStatus } from "@/lib/types";
+import {
+  getAccount, getTopics, saveTopics,
+  getTrends, saveTrends, isTrendsStale,
+} from "@/lib/store";
+import type { Account, Topic, TopicStatus, Trend } from "@/lib/types";
 
 const STATUS_CONFIG: Record<
   TopicStatus,
@@ -23,7 +26,8 @@ export default function TopicsPage() {
   const router = useRouter();
   const [account, setAccount] = useState<Account | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
-  const [trends, setTrends] = useState<Record<string, string>[]>([]);
+  const [trends, setTrends] = useState<Trend[]>([]);
+  const [trendsDate, setTrendsDate] = useState<string | null>(null);
   const [loading, setLoading] = useState<"trends" | "topics" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +39,10 @@ export default function TopicsPage() {
     }
     setAccount(acc);
     setTopics(getTopics());
+
+    const { trends: savedTrends, date } = getTrends();
+    setTrends(savedTrends);
+    setTrendsDate(date);
   }, [router]);
 
   async function fetchTrends() {
@@ -55,6 +63,8 @@ export default function TopicsPage() {
       const data = await res.json();
       if (data.success && data.trends?.length > 0) {
         setTrends(data.trends);
+        saveTrends(data.trends);
+        setTrendsDate(new Date().toISOString().split("T")[0]);
       } else {
         setError(data.error || "未获取到热点，请重试");
       }
@@ -100,178 +110,181 @@ export default function TopicsPage() {
     saveTopics(updated);
   }
 
-  function clearTopics() {
-    setTopics([]);
-    saveTopics([]);
-  }
-
   if (!account) return null;
 
+  const stale = isTrendsStale();
+
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto py-8 px-4">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold">今日选题</h1>
-            <p className="text-muted-foreground mt-1">
-              {account.brand.name} · {account.brand.industry}
-            </p>
-          </div>
-          <Button onClick={() => router.push("/")} variant="outline">
-            返回首页
-          </Button>
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">选题中心</h1>
+          <p className="text-muted-foreground mt-1">
+            {account.brand.name} · {account.brand.industry}
+          </p>
         </div>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={fetchTrends}
+            disabled={loading === "trends"}
+            variant={stale ? "default" : "outline"}
+            size="sm"
+          >
+            {loading === "trends" ? "搜索中..." : stale ? "抓取今日热点" : "重新抓取热点"}
+          </Button>
+          {trends.length > 0 && (
+            <Button
+              onClick={generateTopics}
+              disabled={loading === "topics"}
+              size="sm"
+            >
+              {loading === "topics" ? "生成中..." : "生成选题"}
+            </Button>
+          )}
+        </div>
+      </div>
 
-        {/* Step 1: Fetch trends */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="text-lg">第一步：抓取今日热点</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-3 mb-4">
-              <Button
-                onClick={fetchTrends}
-                disabled={loading === "trends"}
-              >
-                {loading === "trends" ? "正在搜索热点..." : "搜索今日热点"}
-              </Button>
-              {trends.length > 0 && (
-                <span className="text-sm text-muted-foreground">
-                  已获取 {trends.length} 个热点
-                </span>
-              )}
-            </div>
+      {error && (
+        <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded-md text-sm">
+          {error}
+        </div>
+      )}
 
-            {trends.length > 0 && (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {trends.map((trend, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-3 p-2 rounded border text-sm"
-                  >
-                    <span className="text-muted-foreground shrink-0">
-                      {i + 1}.
-                    </span>
-                    <div>
-                      <span className="font-medium">{trend.title}</span>
-                      <p className="text-muted-foreground mt-0.5 text-xs">
+      <div className="grid grid-cols-12 gap-6">
+        {/* Left: Trends panel */}
+        <div className="col-span-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">热点池</CardTitle>
+                {trendsDate && (
+                  <span className="text-xs text-muted-foreground">{trendsDate}</span>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {trends.length > 0 ? (
+                <div className="space-y-2 max-h-[calc(100vh-260px)] overflow-y-auto">
+                  {trends.map((trend, i) => (
+                    <div
+                      key={i}
+                      className="p-2.5 rounded-lg border text-sm hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-medium text-sm leading-snug">
+                          {trend.title}
+                        </span>
+                        {trend.heatScore && (
+                          <Badge variant="secondary" className="shrink-0 text-xs">
+                            {trend.heatScore}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                         {trend.description}
                       </p>
                     </div>
-                    {trend.heatScore && (
-                      <Badge variant="secondary" className="shrink-0 ml-auto">
-                        热度 {trend.heatScore}
-                      </Badge>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Step 2: Generate topics */}
-        {trends.length > 0 && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="text-lg">第二步：生成选题</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Button
-                onClick={generateTopics}
-                disabled={loading === "topics"}
-              >
-                {loading === "topics"
-                  ? "AI 正在策划选题..."
-                  : "基于热点生成选题"}
-              </Button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  点击"抓取今日热点"开始
+                </p>
+              )}
             </CardContent>
           </Card>
-        )}
+        </div>
 
-        {/* Error display */}
-        {error && (
-          <div className="mb-6 p-3 bg-destructive/10 text-destructive rounded-md text-sm">
-            {error}
-          </div>
-        )}
+        {/* Right: Topics panel */}
+        <div className="col-span-8">
+          {topics.length > 0 ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold">
+                  选题列表（{topics.length}）
+                </h2>
+                <div className="flex gap-3 text-xs text-muted-foreground">
+                  <span>采用 {topics.filter((t) => t.status === "approved").length}</span>
+                  <span>待定 {topics.filter((t) => t.status === "pending").length}</span>
+                  <span>留存 {topics.filter((t) => t.status === "hold").length}</span>
+                </div>
+              </div>
 
-        {/* Topics list */}
-        {topics.length > 0 && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
-                选题列表（{topics.length}）
-              </h2>
-              <Button variant="ghost" size="sm" onClick={clearTopics}>
-                清空
-              </Button>
-            </div>
-
-            {topics.map((topic) => (
-              <Card key={topic.id}>
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href={`/topics/${topic.id}`}
-                          className="font-semibold hover:underline"
-                        >
-                          {topic.title}
-                        </Link>
-                        <Badge variant={STATUS_CONFIG[topic.status].variant}>
-                          {STATUS_CONFIG[topic.status].label}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {topic.angle}
-                      </p>
-                      <p className="text-sm">{topic.description}</p>
-                      {topic.relatedTrend && (
-                        <p className="text-xs text-muted-foreground">
-                          关联热点：{topic.relatedTrend}
+              {topics.map((topic) => (
+                <Card key={topic.id} className="hover:shadow-sm transition-shadow">
+                  <CardContent className="py-4">
+                    <div className="flex items-start gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Link
+                            href={`/topics/${topic.id}`}
+                            className="font-medium hover:underline truncate"
+                          >
+                            {topic.title}
+                          </Link>
+                          <Badge
+                            variant={STATUS_CONFIG[topic.status].variant}
+                            className="shrink-0"
+                          >
+                            {STATUS_CONFIG[topic.status].label}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground line-clamp-1">
+                          {topic.angle}
                         </p>
-                      )}
-                    </div>
+                        <p className="text-sm mt-1 line-clamp-2">
+                          {topic.description}
+                        </p>
+                        {topic.relatedTrend && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            热点：{topic.relatedTrend}
+                          </p>
+                        )}
+                      </div>
 
-                    <div className="flex flex-col gap-1 shrink-0">
-                      <Button
-                        size="sm"
-                        variant={
-                          topic.status === "approved" ? "default" : "outline"
-                        }
-                        onClick={() => updateTopicStatus(topic.id, "approved")}
-                      >
-                        采用
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={
-                          topic.status === "hold" ? "secondary" : "outline"
-                        }
-                        onClick={() => updateTopicStatus(topic.id, "hold")}
-                      >
-                        留存
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={
-                          topic.status === "rejected"
-                            ? "destructive"
-                            : "outline"
-                        }
-                        onClick={() => updateTopicStatus(topic.id, "rejected")}
-                      >
-                        放弃
-                      </Button>
+                      <div className="flex gap-1 shrink-0">
+                        <Button
+                          size="sm"
+                          variant={topic.status === "approved" ? "default" : "ghost"}
+                          className="h-7 px-2 text-xs"
+                          onClick={() => updateTopicStatus(topic.id, "approved")}
+                        >
+                          采用
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={topic.status === "hold" ? "secondary" : "ghost"}
+                          className="h-7 px-2 text-xs"
+                          onClick={() => updateTopicStatus(topic.id, "hold")}
+                        >
+                          留存
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={topic.status === "rejected" ? "destructive" : "ghost"}
+                          className="h-7 px-2 text-xs"
+                          onClick={() => updateTopicStatus(topic.id, "rejected")}
+                        >
+                          放弃
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="py-16 text-center">
+                <p className="text-muted-foreground">
+                  {trends.length > 0
+                    ? "热点已就绪，点击\"生成选题\"让 AI 为你策划内容"
+                    : "先抓取今日热点，再生成选题"}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       </div>
     </div>
   );

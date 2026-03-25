@@ -48,24 +48,24 @@ test.describe("热点抓取 + 选题生成", () => {
     await expect(page.locator("text=测试饮料品牌")).toBeVisible();
 
     // Step 1: Fetch trends
-    await page.click("text=搜索今日热点");
-    await expect(page.locator("text=正在搜索热点...")).toBeVisible();
+    await page.click("text=抓取今日热点");
+    await expect(page.locator("text=搜索中...")).toBeVisible();
 
-    // Wait for trends (up to 45s for Gemini API)
-    await expect(page.locator("text=已获取")).toBeVisible({ timeout: 45000 });
+    // Wait for trends to load (button text changes)
+    await expect(page.locator("text=重新抓取热点")).toBeVisible({ timeout: 45000 });
 
     // Step 2: Generate topics
-    await page.click("text=基于热点生成选题");
-    await expect(page.locator("text=AI 正在策划选题...")).toBeVisible();
+    await page.click("text=生成选题");
+    await expect(page.locator("text=生成中...")).toBeVisible();
 
     // Wait for topics (up to 45s)
     await expect(page.locator("text=选题列表")).toBeVisible({ timeout: 45000 });
 
-    // Step 3: Approve a topic
-    const firstApproveBtn = page.locator("text=采用").first();
-    await firstApproveBtn.click();
+    // Step 3: Approve a topic - click the first "采用" button that isn't already active
+    const approveButtons = page.locator('button:has-text("采用")');
+    await approveButtons.first().click();
 
-    // Verify status changed
-    await expect(page.locator('[data-variant="default"]').first()).toBeVisible();
+    // Verify the badge text changed to "采用"
+    await expect(page.locator('[data-slot="badge"]:has-text("采用")').first()).toBeVisible();
   });
 });
