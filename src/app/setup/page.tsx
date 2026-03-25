@@ -35,7 +35,9 @@ export default function SetupPage() {
 
   useEffect(() => {
     const existing = getAccount();
-    if (existing) setAccount(existing);
+    if (existing) {
+      setAccount({ ...emptyAccount, ...existing, brandMaterials: existing.brandMaterials || [] });
+    }
   }, []);
 
   function updateBrand(field: string, value: string) {
