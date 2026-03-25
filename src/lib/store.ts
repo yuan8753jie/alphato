@@ -61,9 +61,16 @@ export function getScripts(): Script[] {
   return loadData().scripts;
 }
 
-export function saveTrends(trends: Trend[]): void {
+export function saveTrends(trends: Trend[], append = false): void {
   const data = loadData();
-  data.trends = trends;
+  if (append) {
+    // Deduplicate by title
+    const existingTitles = new Set(data.trends.map((t) => t.title));
+    const newTrends = trends.filter((t) => !existingTitles.has(t.title));
+    data.trends = [...data.trends, ...newTrends];
+  } else {
+    data.trends = trends;
+  }
   data.trendsDate = new Date().toISOString().split("T")[0];
   saveData(data);
 }

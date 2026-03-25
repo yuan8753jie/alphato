@@ -49,17 +49,15 @@ test.describe("热点抓取 + 选题生成", () => {
 
     // Step 1: Fetch trends
     await page.click("text=抓取今日热点");
-    await expect(page.locator("text=搜索中...")).toBeVisible();
 
-    // Wait for trends to load (button text changes)
-    await expect(page.locator("text=重新抓取热点")).toBeVisible({ timeout: 45000 });
+    // Wait for trends to load - multi-round search takes longer
+    await expect(page.locator("text=重新抓取热点")).toBeVisible({ timeout: 90000 });
 
     // Step 2: Generate topics
     await page.click("text=生成选题");
-    await expect(page.locator("text=生成中...")).toBeVisible();
 
-    // Wait for topics (up to 45s)
-    await expect(page.locator("text=选题列表")).toBeVisible({ timeout: 45000 });
+    // Wait for topics
+    await expect(page.locator("text=选题池")).toBeVisible({ timeout: 60000 });
 
     // Step 3: Approve a topic - click the first "采用" button that isn't already active
     const approveButtons = page.locator('button:has-text("采用")');

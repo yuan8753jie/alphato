@@ -1,11 +1,105 @@
 import { NextRequest, NextResponse } from "next/server";
 import { geminiRequest, extractTextFromResponse } from "@/lib/gemini";
+import type { TrendCategory } from "@/lib/types";
 
-export const maxDuration = 120; // Allow up to 120s for search grounding
+export const maxDuration = 120;
+
+interface SearchRound {
+  name: string;
+  categories: TrendCategory[];
+  buildPrompt: (ctx: { pName: string; industry: string; today: string; month: number; day: number; year: number; brandName?: string }) => string;
+}
+
+const SEARCH_ROUNDS: SearchRound[] = [
+  {
+    name: "实时热点",
+    categories: ["platform_hot", "industry_news", "social_meme"],
+    buildPrompt: ({ pName, industry, today }) => `你是社媒热点分析师。请搜索以下三类今日（${today}）的真实热点：
+
+1. ${pName}平台当前热搜榜上的热门话题（搜索"${pName}热搜榜"）
+2. "${industry}"行业最新新闻动态（搜索"${industry} 最新新闻"）
+3. 当前社交媒体上正在流行的梗和表达方式（搜索"最近流行梗 2026"或"抖音热梗"）
+
+严格要求：所有信息必须来自搜索结果，禁止编造。每条必须标注来源。
+
+返回 JSON 数组（只返回 JSON）：
+[
+  {
+    "title": "标题",
+    "description": "2-3句具体描述",
+    "category": "platform_hot 或 industry_news 或 social_meme",
+    "source": "具体来源网站名",
+    "heatScore": 1到10,
+    "relevance": "与${industry}的关联说明"
+  }
+]`,
+  },
+  {
+    name: "预测事件",
+    categories: ["sports_event", "entertainment", "holiday_calendar", "brand_related"],
+    buildPrompt: ({ industry, year, month, brandName }) => `你是内容日历规划师。请搜索${year}年${month}月至${month + 2 > 12 ? 12 : month + 2}月期间，以下类型的即将发生的重要事件：
+
+1. 重大体育赛事（搜索"${year}年体育赛事日程"或"近期体育赛事"）
+2. 热门综艺节目、即将上映的电影/电视剧（搜索"${year}年${month}月 热门综艺"、"${year}年${month}月 上映电影"）
+3. 节日、节气、纪念日（搜索"${year}年${month}月 节日节气"）
+${brandName ? `4. 与"${brandName}"品牌相关的动态，如代言人新闻、品牌活动（搜索"${brandName} 最新动态"或"${brandName} 代言人"）` : ""}
+
+严格要求：所有信息必须来自搜索结果。每条标注来源和预计日期。
+
+返回 JSON 数组（只返回 JSON）：
+[
+  {
+    "title": "事件标题",
+    "description": "2-3句具体描述",
+    "category": "sports_event 或 entertainment 或 holiday_calendar 或 brand_related",
+    "source": "具体来源",
+    "heatScore": 1到10（预估热度）,
+    "relevance": "与${industry}行业的内容创作关联",
+    "eventDate": "YYYY-MM-DD（预计日期，如知道的话）"
+  }
+]`,
+  },
+  {
+    name: "常青素材",
+    categories: ["trivia", "history_today"],
+    buildPrompt: ({ industry, today, month, day }) => `你是内容创意顾问。请搜索以下两类常青内容素材：
+
+1. "${industry}"品类的冷知识、反常识内容（搜索"${industry} 冷知识"或"${industry} 你不知道的"）
+2. 历史上的${month}月${day}日发生过的有趣事件，适合做内容创作的（搜索"历史上的今天 ${month}月${day}日"）
+
+今天是${today}。
+
+严格要求：必须来自搜索结果，标注来源。冷知识要有趣且可验证。
+
+返回 JSON 数组（只返回 JSON）：
+[
+  {
+    "title": "标题",
+    "description": "2-3句具体描述",
+    "category": "trivia 或 history_today",
+    "source": "具体来源",
+    "heatScore": 1到10,
+    "relevance": "与${industry}的内容创作关联"
+  }
+]`,
+  },
+];
+
+function parseTrendsFromText(text: string): Record<string, unknown>[] {
+  try {
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const { industry, platform } = await req.json();
+    const { industry, platform, brandName, rounds } = await req.json();
 
     const platformName: Record<string, string> = {
       douyin: "抖音", tiktok: "TikTok", xiaohongshu: "小红书",
@@ -13,74 +107,68 @@ export async function POST(req: NextRequest) {
       youtube: "YouTube", bilibili: "Bilibili",
     };
     const pName = platformName[platform] || "抖音";
-
-    const today = new Date().toLocaleDateString("zh-CN", {
+    const now = new Date();
+    const today = now.toLocaleDateString("zh-CN", {
       year: "numeric", month: "long", day: "numeric", weekday: "long",
     });
 
-    // Google Search grounding takes longer, use 90s timeout
-    const data = await geminiRequest("gemini-2.5-flash", {
-      contents: [
-        {
-          parts: [
-            {
-              text: `你是一个资深的社媒内容运营专家。请通过搜索，帮我收集今天（${today}）可以用于${pName}内容创作的真实热点信息。
+    const ctx = {
+      pName,
+      industry: industry || "",
+      today,
+      month: now.getMonth() + 1,
+      day: now.getDate(),
+      year: now.getFullYear(),
+      brandName,
+    };
 
-严格要求：
-- 所有信息必须来自搜索结果，不允许编造或猜测任何热点
-- 每条热点必须注明信息来源（如：抖音热搜榜、微博热搜、新闻网站名称等）
-- 如果搜索不到某个维度的信息，就跳过，不要凑数
+    // Allow client to request specific rounds, or run all
+    const roundsToRun = rounds
+      ? SEARCH_ROUNDS.filter((r) => (rounds as string[]).includes(r.name))
+      : SEARCH_ROUNDS;
 
-请从以下维度搜索：
-1. ${pName}平台当前的热搜榜/热门话题（搜索"${pName}热搜"或"${pName}热门话题"）
-2. 与"${industry}"行业直接相关的最新新闻（搜索"${industry} 新闻 最新"）
-3. 当前社交媒体上正在流行的梗/表达方式（搜索"最近流行的梗"或"社交媒体热梗"）
-4. 可以与"${industry}"结合的社会热点新闻（搜索"今日热点新闻"）
-5. 历史上的今天（${today}）发生过的、适合内容创作的事件（搜索"历史上的今天 ${new Date().getMonth() + 1}月${new Date().getDate()}日"）
-6. "${industry}"品类的冷知识或反常识内容（搜索"${industry} 冷知识"或"${industry} 你不知道的事"）
+    // Run rounds in parallel
+    const results = await Promise.allSettled(
+      roundsToRun.map(async (round) => {
+        const data = await geminiRequest(
+          "gemini-2.5-flash",
+          {
+            contents: [{ parts: [{ text: round.buildPrompt(ctx) }] }],
+            tools: [{ googleSearch: {} }],
+          },
+          90000
+        );
+        const text = extractTextFromResponse(data);
+        const parsed = parseTrendsFromText(text);
+        return parsed.map((t: Record<string, unknown>, i: number) => ({
+          id: `trend_${round.categories[0]}_${Date.now()}_${i}`,
+          title: t.title || "",
+          description: t.description || "",
+          category: t.category || round.categories[0],
+          source: t.source || "",
+          heatScore: t.heatScore || 5,
+          relevance: t.relevance || "",
+          eventDate: t.eventDate || undefined,
+          fetchedAt: new Date().toISOString(),
+        }));
+      })
+    );
 
-请以 JSON 数组格式返回（只返回 JSON，不要其他文字），每条包含：
+    const allTrends = results.flatMap((r) =>
+      r.status === "fulfilled" ? r.value : []
+    );
 
-[
-  {
-    "title": "热点标题",
-    "description": "2-3句话描述这个热点的具体内容",
-    "source": "信息来源（如：抖音热搜榜、新浪新闻、百度百科等具体来源）",
-    "sourceType": "platform_trend / news / social_meme / history / trivia / industry_event",
-    "heatScore": 1到10的热度评分（基于搜索结果判断），
-    "relevance": "这个热点与${industry}行业的潜在关联（即使是非行业热点，也说明可以怎么关联）"
-  }
-]
+    const errors = results
+      .filter((r) => r.status === "rejected")
+      .map((r) => (r as PromiseRejectedResult).reason?.message || "Unknown error");
 
-宁缺毋滥，只返回有真实来源的信息，数量不限。`,
-            },
-          ],
-        },
-      ],
-      tools: [{ googleSearch: {} }],
-    }, 90000);
-
-    const text = extractTextFromResponse(data);
-
-    // Extract grounding sources from response metadata
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const groundingChunks = (data as any).candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const sources = groundingChunks.map((chunk: { web?: { title?: string; uri?: string } }) => ({
-      title: chunk.web?.title || "",
-      uri: chunk.web?.uri || "",
-    }));
-
-    try {
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const trends = JSON.parse(jsonMatch[0]);
-        return NextResponse.json({ success: true, trends, groundingSources: sources });
-      }
-    } catch {
-      // Fall through
-    }
-
-    return NextResponse.json({ success: true, trends: [], raw: text, groundingSources: sources });
+    return NextResponse.json({
+      success: true,
+      trends: allTrends,
+      roundsCompleted: results.filter((r) => r.status === "fulfilled").length,
+      roundsTotal: roundsToRun.length,
+      errors: errors.length > 0 ? errors : undefined,
+    });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

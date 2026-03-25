@@ -61,6 +61,58 @@ export interface Account {
   benchmarkAccounts: BenchmarkAccount[];
 }
 
+// ===== 热点池 =====
+
+export type TrendCategory =
+  | "platform_hot"     // 平台热搜
+  | "industry_news"    // 行业动态
+  | "social_meme"      // 社交热梗
+  | "sports_event"     // 体育赛事
+  | "entertainment"    // 综艺/影视
+  | "holiday_calendar" // 节日/节气/纪念日
+  | "brand_related"    // 品牌相关（代言人、活动）
+  | "trivia"           // 品类冷知识
+  | "history_today";   // 历史上的今天
+
+export const TREND_CATEGORY_LABELS: Record<TrendCategory, string> = {
+  platform_hot: "平台热搜",
+  industry_news: "行业动态",
+  social_meme: "社交热梗",
+  sports_event: "体育赛事",
+  entertainment: "综艺/影视",
+  holiday_calendar: "节日/节气",
+  brand_related: "品牌相关",
+  trivia: "冷知识",
+  history_today: "历史今天",
+};
+
+export interface Trend {
+  id: string;
+  title: string;
+  description: string;
+  category: TrendCategory;
+  source: string;        // 信息来源（具体网站/平台）
+  heatScore: number;     // 1-10
+  relevance: string;     // 与品牌/行业的关联说明
+  eventDate?: string;    // 预测事件的日期（YYYY-MM-DD）
+  fetchedAt: string;     // 抓取时间
+}
+
+// ===== 选题池 =====
+
+export type TopicType =
+  | "traffic"     // 流量型（蹭热点拉曝光）
+  | "trust"       // 信任型（干货建立专业感）
+  | "conversion"  // 转化型（种草带货）
+  | "persona";    // 人设型（拉近距离）
+
+export const TOPIC_TYPE_LABELS: Record<TopicType, string> = {
+  traffic: "流量型",
+  trust: "信任型",
+  conversion: "转化型",
+  persona: "人设型",
+};
+
 export type TopicStatus = "pending" | "approved" | "rejected" | "hold";
 
 export interface Topic {
@@ -68,10 +120,14 @@ export interface Topic {
   title: string;
   angle: string;
   description: string;
-  relatedTrend: string;
+  type: TopicType;
+  relatedTrendIds: string[];   // 关联的热点ID（可多个）
+  estimatedAppeal: string;
   status: TopicStatus;
   createdAt: string;
 }
+
+// ===== 脚本 =====
 
 export interface Script {
   id: string;
@@ -89,18 +145,12 @@ export interface ScriptScene {
   text: string;
 }
 
-export interface Trend {
-  title: string;
-  description: string;
-  source?: string;
-  heatScore?: number;
-  relevance?: string;
-}
+// ===== 数据存储 =====
 
 export interface AppData {
   account: Account | null;
   topics: Topic[];
   scripts: Script[];
   trends: Trend[];
-  trendsDate: string | null; // YYYY-MM-DD, tracks when trends were fetched
+  trendsDate: string | null;
 }
