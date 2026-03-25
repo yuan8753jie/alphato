@@ -23,7 +23,7 @@ export default function TopicDetailPage() {
   useEffect(() => {
     const acc = getAccount();
     if (!acc) {
-      router.push("/setup");
+      router.push("/settings");
       return;
     }
     setAccount(acc);

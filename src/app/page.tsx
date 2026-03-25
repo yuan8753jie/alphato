@@ -92,7 +92,7 @@ export default function Home() {
                   <span className="text-muted-foreground">品牌资料</span>
                   <span>{account.brandMaterials?.length || 0} 份</span>
                 </div>
-                <Link href="/setup">
+                <Link href="/settings">
                   <Button variant="outline" size="sm" className="w-full mt-3">
                     编辑设置
                   </Button>
@@ -101,7 +101,7 @@ export default function Home() {
             ) : (
               <div className="text-center py-6">
                 <p className="text-muted-foreground text-sm mb-3">还没有配置账号</p>
-                <Link href="/setup">
+                <Link href="/settings">
                   <Button size="sm">开始配置</Button>
                 </Link>
               </div>

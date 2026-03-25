@@ -8,7 +8,7 @@ test.describe("账号工作区", () => {
   });
 
   test("setup 页面能加载并保存", async ({ page }) => {
-    await page.goto("/setup");
+    await page.goto("/settings");
     await expect(page.locator("h1")).toContainText("账号工作区设置");
 
     // Fill brand info
@@ -23,7 +23,7 @@ test.describe("账号工作区", () => {
   });
 
   test("上传品牌资料图片并调用 Gemini 提取", async ({ page }) => {
-    await page.goto("/setup");
+    await page.goto("/settings");
 
     // Select purpose
     await page.locator("select").first().selectOption("product_info");
@@ -48,7 +48,7 @@ test.describe("账号工作区", () => {
 
   test("保存后首页显示账号信息", async ({ page }) => {
     // First save account info
-    await page.goto("/setup");
+    await page.goto("/settings");
     await page.fill("#accountName", "E2E测试号");
     await page.fill("#brandName", "E2E品牌");
     await page.fill("#industry", "电商");
@@ -57,7 +57,7 @@ test.describe("账号工作区", () => {
 
     // Go to homepage and check
     await page.goto("/");
-    await expect(page.locator("text=E2E测试号")).toBeVisible();
-    await expect(page.locator("text=E2E品牌")).toBeVisible();
+    await expect(page.getByRole("main").getByText("E2E测试号")).toBeVisible();
+    await expect(page.getByRole("main").getByText("E2E品牌")).toBeVisible();
   });
 });
