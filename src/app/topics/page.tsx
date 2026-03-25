@@ -14,8 +14,7 @@ import type {
   Account, Topic, TopicStatus, TopicType, Trend, TrendSection,
 } from "@/lib/types";
 import {
-  TREND_CATEGORY_LABELS, TREND_SECTION_LABELS,
-  TOPIC_TYPE_LABELS,
+  TREND_CATEGORY_LABELS, TREND_SECTION_LABELS, TOPIC_TYPE_LABELS,
 } from "@/lib/types";
 
 const STATUS_LABEL: Record<TopicStatus, string> = {
@@ -31,6 +30,8 @@ const TYPE_COLORS: Record<TopicType, string> = {
   persona: "bg-purple-100 text-purple-800",
 };
 
+type TabKey = "trends" | "topics" | "calendar";
+
 export default function TopicsPage() {
   const router = useRouter();
   const [account, setAccount] = useState<Account | null>(null);
@@ -39,21 +40,24 @@ export default function TopicsPage() {
   const [trendsDate, setTrendsDate] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>("trends");
 
   useEffect(() => {
     const acc = getAccount();
     if (!acc) { router.push("/setup"); return; }
     setAccount(acc);
-    setTopics(getTopics());
+    const savedTopics = getTopics();
+    setTopics(savedTopics);
     const { trends: saved, date } = getTrends();
     setTrends(saved);
     setTrendsDate(date);
+    // Auto-select tab: if trends exist but no topics, stay on trends; if topics exist, show topics
+    if (savedTopics.length > 0) setActiveTab("topics");
   }, [router]);
 
   async function fetchTrends(sections?: string[]) {
     if (!account) return;
-    const label = sections ? sections.join("+") : "all";
-    setLoading(`trends-${label}`);
+    setLoading("trends");
     setError(null);
 
     try {
@@ -70,7 +74,6 @@ export default function TopicsPage() {
       });
       const data = await res.json();
       if (data.success && data.trends?.length > 0) {
-        // Append if fetching specific sections, replace if fetching all
         if (sections) {
           const sectionSet = new Set(sections);
           const kept = trends.filter((t) => !sectionSet.has(t.section));
@@ -111,6 +114,7 @@ export default function TopicsPage() {
         const newTopics = [...data.topics, ...topics];
         setTopics(newTopics);
         saveTopics(newTopics);
+        setActiveTab("topics");
       } else {
         setError(data.error || "选题生成失败");
       }
@@ -130,32 +134,63 @@ export default function TopicsPage() {
   if (!account) return null;
 
   const stale = isTrendsStale();
+  const isLoading = loading !== null;
 
   // Group trends by section
   const trendsBySection: Record<TrendSection, Trend[]> = { global: [], industry: [], brand: [] };
   for (const t of trends) {
-    const section = t.section || "global";
-    if (trendsBySection[section]) trendsBySection[section].push(t);
+    const s = t.section || "global";
+    if (trendsBySection[s]) trendsBySection[s].push(t);
   }
 
-  const isLoading = loading !== null;
+  const TABS: { key: TabKey; label: string; count?: number }[] = [
+    { key: "trends", label: "热点池", count: trends.length },
+    { key: "topics", label: "选题池", count: topics.length },
+    { key: "calendar", label: "营销日历" },
+  ];
 
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold">选题中心</h1>
-          <p className="text-muted-foreground mt-1">{account.brand.name} · {account.brand.industry}</p>
+          <p className="text-muted-foreground mt-0.5 text-sm">{account.brand.name} · {account.brand.industry}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={() => fetchTrends()} disabled={isLoading} variant={stale ? "default" : "outline"} size="sm">
-            {loading?.startsWith("trends") ? "搜索中..." : stale ? "抓取全部热点" : "刷新全部热点"}
-          </Button>
-          <Button onClick={() => fetchTrends(["brand"])} disabled={isLoading} variant="outline" size="sm">
-            {loading === "trends-brand" ? "搜索中..." : "刷新品牌信号"}
-          </Button>
-          {trends.length > 0 && (
+      </div>
+
+      {/* Tab bar + Actions */}
+      <div className="flex items-center justify-between border-b mb-6">
+        <div className="flex">
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                activeTab === tab.key
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {tab.label}
+              {tab.count !== undefined && tab.count > 0 && (
+                <span className="ml-1.5 text-xs text-muted-foreground">({tab.count})</span>
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 pb-2">
+          {activeTab === "trends" && (
+            <>
+              <Button onClick={() => fetchTrends()} disabled={isLoading} variant={stale ? "default" : "outline"} size="sm">
+                {loading === "trends" ? "搜索中（约60秒）..." : stale ? "抓取全部热点" : "刷新全部热点"}
+              </Button>
+              <Button onClick={() => fetchTrends(["brand"])} disabled={isLoading} variant="outline" size="sm">
+                {loading === "trends" ? "..." : "刷新品牌信号"}
+              </Button>
+            </>
+          )}
+          {activeTab === "topics" && trends.length > 0 && (
             <Button onClick={generateTopics} disabled={isLoading} size="sm">
               {loading === "topics" ? "生成中..." : "生成选题"}
             </Button>
@@ -167,129 +202,157 @@ export default function TopicsPage() {
         <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded-md text-sm">{error}</div>
       )}
 
-      <div className="grid grid-cols-12 gap-6">
-        {/* ========== Left: Trend Pool ========== */}
-        <div className="col-span-5 space-y-4">
+      {/* ==================== TRENDS TAB ==================== */}
+      {activeTab === "trends" && (
+        <div>
           {trends.length > 0 ? (
-            <>
+            <div className="space-y-6">
               {(["global", "industry", "brand"] as TrendSection[]).map((section) => {
                 const items = trendsBySection[section];
                 if (items.length === 0) return null;
                 return (
-                  <Card key={section}>
-                    <CardHeader className="pb-2 pt-4 px-4">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-sm font-semibold">
-                          {TREND_SECTION_LABELS[section]}
-                          <span className="text-muted-foreground font-normal ml-1">({items.length})</span>
-                        </CardTitle>
-                        {trendsDate && section === "global" && (
-                          <span className="text-[10px] text-muted-foreground">{trendsDate}</span>
-                        )}
-                      </div>
-                    </CardHeader>
-                    <CardContent className="px-4 pb-3">
-                      <div className="space-y-1.5 max-h-[280px] overflow-y-auto">
-                        {items.map((trend) => (
-                          <div key={trend.id} className="p-2 rounded border text-sm hover:bg-muted/50 transition-colors">
-                            <div className="flex items-start justify-between gap-2">
-                              <span className="font-medium text-[13px] leading-snug">{trend.title}</span>
-                              <span className="text-[10px] text-muted-foreground shrink-0">{trend.heatScore}/10</span>
+                  <div key={section}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <h3 className="text-base font-semibold">{TREND_SECTION_LABELS[section]}</h3>
+                      <span className="text-xs text-muted-foreground">({items.length})</span>
+                      {section === "global" && trendsDate && (
+                        <span className="text-xs text-muted-foreground ml-auto">{trendsDate}</span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      {items.map((trend) => (
+                        <Card key={trend.id} className="hover:shadow-sm transition-shadow">
+                          <CardContent className="p-3">
+                            <div className="flex items-start justify-between gap-2 mb-1">
+                              <span className="font-medium text-sm leading-snug">{trend.title}</span>
+                              <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">{trend.heatScore}/10</span>
                             </div>
-                            <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{trend.description}</p>
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <span className="text-[10px] px-1 py-px rounded bg-muted">{TREND_CATEGORY_LABELS[trend.category] || trend.category}</span>
+                            <p className="text-xs text-muted-foreground line-clamp-3">{trend.description}</p>
+                            <div className="flex items-center gap-1.5 mt-2">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-medium">
+                                {TREND_CATEGORY_LABELS[trend.category] || trend.category}
+                              </span>
                               <span className="text-[10px] text-muted-foreground truncate">{trend.source}</span>
                               {trend.eventDate && <span className="text-[10px] text-muted-foreground shrink-0">{trend.eventDate}</span>}
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
                 );
               })}
-            </>
+
+              {/* Prompt to generate topics */}
+              <div className="text-center py-6 border-t">
+                <p className="text-sm text-muted-foreground mb-3">
+                  热点已就绪，可以基于这些热点为品牌生成选题
+                </p>
+                <Button onClick={() => { generateTopics(); }} disabled={isLoading} size="sm">
+                  {loading === "topics" ? "生成中..." : "基于热点生成选题 →"}
+                </Button>
+              </div>
+            </div>
           ) : (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <p className="text-sm text-muted-foreground mb-1">热点池为空</p>
-                <p className="text-xs text-muted-foreground">点击"抓取全部热点"，AI 将从多个维度搜索真实热点</p>
-              </CardContent>
-            </Card>
+            <div className="text-center py-20">
+              <h3 className="text-lg font-medium mb-2">热点池为空</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                AI 将从多个维度搜索真实热点：平台热搜、行业动态、体育赛事、综艺影视、品牌信号等
+              </p>
+              <Button onClick={() => fetchTrends()} disabled={isLoading} size="lg">
+                {loading === "trends" ? "正在搜索（约60秒）..." : "开始抓取热点"}
+              </Button>
+            </div>
           )}
         </div>
+      )}
 
-        {/* ========== Right: Topic Pool ========== */}
-        <div className="col-span-7">
+      {/* ==================== TOPICS TAB ==================== */}
+      {activeTab === "topics" && (
+        <div>
           {topics.length > 0 ? (
-            <div className="space-y-3">
-              {/* Stats bar */}
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold">选题池（{topics.length}）</h2>
-                <div className="flex gap-2">
-                  {(["traffic", "trust", "conversion", "persona"] as TopicType[]).map((type) => {
-                    const count = topics.filter((t) => t.type === type).length;
-                    return count > 0 ? (
-                      <span key={type} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${TYPE_COLORS[type]}`}>
-                        {TOPIC_TYPE_LABELS[type]} {count}
-                      </span>
-                    ) : null;
-                  })}
-                </div>
+            <div className="space-y-4">
+              {/* Type stats */}
+              <div className="flex items-center gap-3">
+                {(["traffic", "trust", "conversion", "persona"] as TopicType[]).map((type) => {
+                  const count = topics.filter((t) => t.type === type).length;
+                  return count > 0 ? (
+                    <span key={type} className={`text-xs px-2 py-0.5 rounded font-medium ${TYPE_COLORS[type]}`}>
+                      {TOPIC_TYPE_LABELS[type]} {count}
+                    </span>
+                  ) : null;
+                })}
+                <span className="text-xs text-muted-foreground ml-auto">
+                  采用 {topics.filter((t) => t.status === "approved").length} ·
+                  待定 {topics.filter((t) => t.status === "pending").length}
+                </span>
               </div>
 
-              {/* Topic cards */}
-              {topics.map((topic) => (
-                <Card key={topic.id} className="hover:shadow-sm transition-shadow">
-                  <CardContent className="py-3 px-4">
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                          <Link href={`/topics/${topic.id}`} className="font-medium text-[13px] hover:underline">
-                            {topic.title}
-                          </Link>
-                          <span className={`text-[10px] px-1 py-px rounded font-medium ${TYPE_COLORS[topic.type] || ""}`}>
-                            {TOPIC_TYPE_LABELS[topic.type] || topic.type}
-                          </span>
-                          <Badge variant={STATUS_VARIANT[topic.status]} className="text-[10px] h-4 px-1">
-                            {STATUS_LABEL[topic.status]}
-                          </Badge>
-                        </div>
-                        <p className="text-[12px] text-muted-foreground line-clamp-1">{topic.angle}</p>
-                        <p className="text-[12px] mt-0.5 line-clamp-2">{topic.description}</p>
+              {/* Topic cards - 2 column grid */}
+              <div className="grid grid-cols-2 gap-4">
+                {topics.map((topic) => (
+                  <Card key={topic.id} className="hover:shadow-sm transition-shadow">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${TYPE_COLORS[topic.type] || ""}`}>
+                          {TOPIC_TYPE_LABELS[topic.type] || topic.type}
+                        </span>
+                        <Badge variant={STATUS_VARIANT[topic.status]} className="text-[10px] h-4 px-1.5">
+                          {STATUS_LABEL[topic.status]}
+                        </Badge>
                       </div>
-                      <div className="flex gap-1 shrink-0">
+                      <Link href={`/topics/${topic.id}`} className="font-semibold text-sm hover:underline block mb-1">
+                        {topic.title}
+                      </Link>
+                      <p className="text-xs text-muted-foreground mb-1">{topic.angle}</p>
+                      <p className="text-xs line-clamp-3 mb-3">{topic.description}</p>
+                      <div className="flex gap-1.5">
                         {(["approved", "hold", "rejected"] as TopicStatus[]).map((s) => (
                           <Button
                             key={s}
                             size="sm"
-                            variant={topic.status === s ? (s === "rejected" ? "destructive" : s === "hold" ? "secondary" : "default") : "ghost"}
-                            className="h-6 px-1.5 text-[10px]"
+                            variant={topic.status === s ? (s === "rejected" ? "destructive" : s === "hold" ? "secondary" : "default") : "outline"}
+                            className="h-7 px-2.5 text-xs flex-1"
                             onClick={() => updateTopicStatus(topic.id, s)}
                           >
                             {STATUS_LABEL[s]}
                           </Button>
                         ))}
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             </div>
           ) : (
-            <Card>
-              <CardContent className="py-16 text-center">
-                <p className="text-muted-foreground text-sm">
-                  {trends.length > 0
-                    ? "热点已就绪，点击\"生成选题\"让 AI 按流量/信任/转化/人设四种类型策划"
-                    : "先抓取热点，再生成选题"}
-                </p>
-              </CardContent>
-            </Card>
+            <div className="text-center py-20">
+              <h3 className="text-lg font-medium mb-2">选题池为空</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                {trends.length > 0
+                  ? "热点已就绪，点击下方按钮让 AI 按流量/信任/转化/人设四种类型策划选题"
+                  : "请先到热点池抓取热点"}
+              </p>
+              {trends.length > 0 ? (
+                <Button onClick={generateTopics} disabled={isLoading} size="lg">
+                  {loading === "topics" ? "生成中..." : "生成选题"}
+                </Button>
+              ) : (
+                <Button onClick={() => setActiveTab("trends")} variant="outline" size="lg">
+                  去热点池 →
+                </Button>
+              )}
+            </div>
           )}
         </div>
-      </div>
+      )}
+
+      {/* ==================== CALENDAR TAB ==================== */}
+      {activeTab === "calendar" && (
+        <div className="text-center py-20">
+          <h3 className="text-lg font-medium mb-2">营销日历</h3>
+          <p className="text-sm text-muted-foreground">即将上线，敬请期待</p>
+        </div>
+      )}
     </div>
   );
 }
