@@ -48,10 +48,10 @@ test.describe("热点抓取 + 选题生成", () => {
     await expect(page.locator("text=测试饮料品牌")).toBeVisible();
 
     // Step 1: Fetch trends
-    await page.click("text=抓取今日热点");
+    await page.click("text=抓取全部热点");
 
-    // Wait for trends to load - multi-round search takes longer
-    await expect(page.locator("text=重新抓取热点")).toBeVisible({ timeout: 90000 });
+    // Wait for trends to load - 4 parallel search rounds, needs more time
+    await expect(page.locator("text=刷新全部热点")).toBeVisible({ timeout: 180000 });
 
     // Step 2: Generate topics
     await page.click("text=生成选题");

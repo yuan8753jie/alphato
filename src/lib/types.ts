@@ -86,16 +86,25 @@ export const TREND_CATEGORY_LABELS: Record<TrendCategory, string> = {
   history_today: "历史今天",
 };
 
+export type TrendSection = "global" | "industry" | "brand";
+
+export const TREND_SECTION_LABELS: Record<TrendSection, string> = {
+  global: "全局热点",
+  industry: "行业洞察",
+  brand: "品牌信号",
+};
+
 export interface Trend {
   id: string;
   title: string;
   description: string;
   category: TrendCategory;
-  source: string;        // 信息来源（具体网站/平台）
-  heatScore: number;     // 1-10
-  relevance: string;     // 与品牌/行业的关联说明
-  eventDate?: string;    // 预测事件的日期（YYYY-MM-DD）
-  fetchedAt: string;     // 抓取时间
+  section: TrendSection;  // 所属板块
+  source: string;         // 信息来源
+  heatScore: number;      // 1-10
+  relevance: string;      // 关联说明
+  eventDate?: string;     // 预测事件日期
+  fetchedAt: string;      // 抓取时间
 }
 
 // ===== 选题池 =====
