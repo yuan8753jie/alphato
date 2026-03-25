@@ -18,27 +18,40 @@ function getProxyDispatcher(): ProxyAgent | undefined {
 
 export async function geminiRequest(
   model: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  timeoutMs: number = 60000
 ): Promise<Record<string, unknown>> {
   const apiKey = getApiKey();
   const url = `${GEMINI_BASE}/models/${model}:generateContent?key=${apiKey}`;
 
   const dispatcher = getProxyDispatcher();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    // @ts-expect-error dispatcher is a valid undici option for Node fetch
-    dispatcher,
-  });
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+      // @ts-expect-error dispatcher is a valid undici option for Node fetch
+      dispatcher,
+    });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Gemini API error (${response.status}): ${err}`);
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`Gemini API error (${response.status}): ${err}`);
+    }
+
+    return response.json();
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(`Gemini API timeout after ${timeoutMs / 1000}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-
-  return response.json();
 }
 
 export function extractTextFromResponse(data: Record<string, unknown>): string {

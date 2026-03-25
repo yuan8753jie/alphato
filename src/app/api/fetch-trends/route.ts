@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { geminiRequest, extractTextFromResponse } from "@/lib/gemini";
 
+export const maxDuration = 120; // Allow up to 120s for search grounding
+
 export async function POST(req: NextRequest) {
   try {
     const { industry, platform } = await req.json();
@@ -16,6 +18,7 @@ export async function POST(req: NextRequest) {
       year: "numeric", month: "long", day: "numeric", weekday: "long",
     });
 
+    // Google Search grounding takes longer, use 90s timeout
     const data = await geminiRequest("gemini-2.5-flash", {
       contents: [
         {
@@ -55,7 +58,7 @@ export async function POST(req: NextRequest) {
         },
       ],
       tools: [{ googleSearch: {} }],
-    });
+    }, 90000);
 
     const text = extractTextFromResponse(data);
 
