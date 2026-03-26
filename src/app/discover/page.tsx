@@ -12,12 +12,17 @@ import { TREND_CATEGORY_LABELS, TREND_SECTION_LABELS } from "@/lib/types";
 
 function TrendCard({ trend }: { trend: Trend }) {
   return (
-    <Card className="hover:shadow-sm transition-shadow">
+    <Card className={`hover:shadow-sm transition-shadow ${trend.warning ? "border-amber-300 bg-amber-50/30" : ""}`}>
       <CardContent className="p-3">
         <div className="flex items-start justify-between gap-2 mb-1">
           <span className="font-medium text-sm leading-snug">{trend.title}</span>
           <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">{trend.heatScore}/10</span>
         </div>
+        {trend.warning && (
+          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium mb-1">
+            ⚠️ {trend.warning}
+          </span>
+        )}
         <p className="text-xs text-muted-foreground line-clamp-3">{trend.description}</p>
         <div className="flex items-center gap-1.5 mt-2">
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-medium">

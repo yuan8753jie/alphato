@@ -104,6 +104,7 @@ export interface Trend {
   heatScore: number;      // 1-10
   relevance: string;      // 关联说明
   eventDate?: string;     // 预测事件日期
+  warning?: string;       // 警告标签（如"竞品负面"）
   fetchedAt: string;      // 抓取时间
 }
 

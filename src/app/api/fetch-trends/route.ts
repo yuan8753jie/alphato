@@ -35,6 +35,27 @@ interface Ctx {
 }
 
 // ============================================================
+// Brand safety filter — appended to every search round prompt
+// ============================================================
+
+const SAFETY_FILTER = `
+
+品牌安全过滤（必须严格执行）：
+直接剔除以下类型的内容，不要返回：
+- 政治敏感：国家领导人、国际冲突、领土争议、政策争议、政治运动
+- 负面社会新闻：犯罪、事故、灾难、死亡、暴力事件
+- 明星塌房：出轨、吸毒、违法、粉丝对立
+- 自然灾害：地震、洪水、台风等
+- 宗教/民族争议
+- 公共卫生恐慌：食品安全丑闻、疫情恐慌
+- 未经证实的谣言/爆料
+- 涉及未成年人的负面新闻
+
+例外：如果某条热点涉及竞品的负面新闻（如竞品食品安全问题、竞品公关危机等），仍然保留，但在返回的 JSON 中加上 "warning": "竞品负面" 字段。这类热点需要谨慎使用，但对品牌有参考价值。
+
+对于正常的热点，不需要 warning 字段。`;
+
+// ============================================================
 // Search round definitions — grouped into 3 sections
 // ============================================================
 
@@ -55,9 +76,9 @@ const ROUNDS: Round[] = [
 搜索建议："${pName}热搜榜"、"最近流行梗"、"抖音热梗 2026"
 
 严格要求：全部来自搜索结果，禁止编造，每条标注来源。
-
+${SAFETY_FILTER}
 返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"platform_hot 或 social_meme","source":"来源网站","heatScore":1到10,"relevance":"内容创作价值"}]`,
+[{"title":"","description":"2-3句","category":"platform_hot 或 social_meme","source":"来源网站","heatScore":1到10,"relevance":"内容创作价值","warning":"仅竞品负面时填写，否则不要此字段"}]`,
   },
   {
     section: "global",
@@ -70,9 +91,9 @@ const ROUNDS: Round[] = [
 3. 节日、节气、纪念日（搜索"${year}年${month}月 节日节气"）
 
 严格要求：来自搜索结果，标注来源和日期。
-
+${SAFETY_FILTER}
 返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"sports_event 或 entertainment 或 holiday_calendar","source":"来源","heatScore":1到10,"relevance":"内容创作价值","eventDate":"YYYY-MM-DD"}]`,
+[{"title":"","description":"2-3句","category":"sports_event 或 entertainment 或 holiday_calendar","source":"来源","heatScore":1到10,"relevance":"内容创作价值","eventDate":"YYYY-MM-DD","warning":"仅竞品负面时填写，否则不要此字段"}]`,
   },
   // --- Industry (needs industry keyword) ---
   {
@@ -86,9 +107,9 @@ const ROUNDS: Round[] = [
 3. 历史上的${month}月${day}日发生过的有趣事件（搜索"历史上的今天 ${month}月${day}日"）
 
 严格要求：来自搜索结果，标注来源。
-
+${SAFETY_FILTER}
 返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"industry_news 或 trivia 或 history_today","source":"来源","heatScore":1到10,"relevance":"与${industry}的关联"}]`,
+[{"title":"","description":"2-3句","category":"industry_news 或 trivia 或 history_today","source":"来源","heatScore":1到10,"relevance":"与${industry}的关联","warning":"仅竞品负面时填写，否则不要此字段"}]`,
   },
   // --- Brand signals (needs brand name + benchmark accounts) ---
   {
@@ -103,9 +124,9 @@ const ROUNDS: Round[] = [
       }
 
       parts.push(`严格要求：来自搜索结果，标注来源。
-
+${SAFETY_FILTER}
 返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"brand_related","source":"来源","heatScore":1到10,"relevance":"对品牌内容创作的价值"}]`);
+[{"title":"","description":"2-3句","category":"brand_related","source":"来源","heatScore":1到10,"relevance":"对品牌内容创作的价值","warning":"仅竞品负面时填写，否则不要此字段"}]`);
 
       return parts.join("\n\n");
     },
@@ -163,6 +184,7 @@ export async function POST(req: NextRequest) {
           heatScore: t.heatScore || 5,
           relevance: t.relevance || "",
           eventDate: t.eventDate || undefined,
+          warning: t.warning || undefined,
           section: round.section,
           fetchedAt: now.toISOString(),
         }));
