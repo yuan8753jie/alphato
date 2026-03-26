@@ -11,7 +11,25 @@ import {
 import type { Account, Trend, TrendSection, TrendCategory } from "@/lib/types";
 import { TREND_CATEGORY_LABELS, TREND_SECTION_LABELS } from "@/lib/types";
 
+// Section color scheme
+const SECTION_COLORS: Record<TrendSection, { bg: string; text: string; activeBg: string; activeText: string }> = {
+  global: { bg: "bg-blue-50", text: "text-blue-700", activeBg: "bg-blue-600", activeText: "text-white" },
+  industry: { bg: "bg-emerald-50", text: "text-emerald-700", activeBg: "bg-emerald-600", activeText: "text-white" },
+  brand: { bg: "bg-violet-50", text: "text-violet-700", activeBg: "bg-violet-600", activeText: "text-white" },
+};
+
+// Map category → section for coloring
+const CATEGORY_TO_SECTION: Record<string, TrendSection> = {
+  platform_hot: "global", social_meme: "global", sports_event: "global",
+  entertainment: "global", holiday_calendar: "global", history_today: "global",
+  industry_news: "industry", trivia: "industry",
+  brand_related: "brand",
+};
+
 function TrendCard({ trend }: { trend: Trend }) {
+  const section = trend.section || CATEGORY_TO_SECTION[trend.category] || "global";
+  const colors = SECTION_COLORS[section];
+
   return (
     <Card className={`hover:shadow-sm transition-shadow ${trend.warning ? "border-amber-300 bg-amber-50/30" : ""}`}>
       <CardContent className="p-3">
@@ -25,7 +43,10 @@ function TrendCard({ trend }: { trend: Trend }) {
           </span>
         )}
         <p className="text-xs text-muted-foreground line-clamp-3">{trend.description}</p>
-        <div className="flex items-center gap-1.5 mt-2">
+        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${colors.bg} ${colors.text}`}>
+            {TREND_SECTION_LABELS[section]}
+          </span>
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-medium">
             {TREND_CATEGORY_LABELS[trend.category] || trend.category}
           </span>
@@ -48,66 +69,6 @@ function TrendCard({ trend }: { trend: Trend }) {
   );
 }
 
-function SectionBlock({ title, items, date }: {
-  title: string;
-  items: Trend[];
-  date?: string | null;
-}) {
-  const [activeCategory, setActiveCategory] = useState<TrendCategory | "all">("all");
-
-  // Get unique categories with counts
-  const categoryCounts = new Map<TrendCategory, number>();
-  for (const t of items) {
-    categoryCounts.set(t.category, (categoryCounts.get(t.category) || 0) + 1);
-  }
-  const categories = Array.from(categoryCounts.entries());
-
-  const filtered = activeCategory === "all"
-    ? items
-    : items.filter((t) => t.category === activeCategory);
-
-  return (
-    <div>
-      <div className="flex items-center gap-2 mb-3">
-        <h2 className="text-base font-semibold">{title}</h2>
-        <span className="text-xs text-muted-foreground">({items.length})</span>
-        {date && <span className="text-xs text-muted-foreground ml-auto">{date}</span>}
-      </div>
-
-      {/* Category filter tabs */}
-      {categories.length > 1 && (
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          <button
-            onClick={() => setActiveCategory("all")}
-            className={`text-xs px-2 py-1 rounded-md transition-colors ${
-              activeCategory === "all" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80 text-muted-foreground"
-            }`}
-          >
-            全部 ({items.length})
-          </button>
-          {categories.map(([cat, count]) => (
-            <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              className={`text-xs px-2 py-1 rounded-md transition-colors ${
-                activeCategory === cat ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80 text-muted-foreground"
-              }`}
-            >
-              {TREND_CATEGORY_LABELS[cat] || cat} ({count})
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="grid grid-cols-3 gap-3">
-        {filtered.map((trend) => (
-          <TrendCard key={trend.id} trend={trend} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default function DiscoverPage() {
   const router = useRouter();
   const [account, setAccount] = useState<Account | null>(null);
@@ -115,7 +76,7 @@ export default function DiscoverPage() {
   const [trendsDate, setTrendsDate] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<TrendSection | "all">("all");
+  const [activeFilter, setActiveFilter] = useState<string>("all");
 
   useEffect(() => {
     const acc = getAccount();
@@ -174,20 +135,32 @@ export default function DiscoverPage() {
   const stale = isTrendsStale();
   const isLoading = loading !== null;
 
-  const trendsBySection: Record<TrendSection, Trend[]> = { global: [], industry: [], brand: [] };
+  // Build unified filter tabs: "all" + each category that exists, grouped by section
+  const categoryCounts = new Map<string, { count: number; section: TrendSection }>();
   for (const t of trends) {
-    const s = t.section || "global";
-    if (trendsBySection[s]) trendsBySection[s].push(t);
+    const key = t.category;
+    const existing = categoryCounts.get(key);
+    if (existing) {
+      existing.count++;
+    } else {
+      categoryCounts.set(key, {
+        count: 1,
+        section: t.section || CATEGORY_TO_SECTION[t.category] || "global",
+      });
+    }
   }
 
-  const SECTION_TABS: { key: TrendSection | "all"; label: string; count: number }[] = [
-    { key: "all", label: "全部", count: trends.length },
-    { key: "global", label: TREND_SECTION_LABELS.global, count: trendsBySection.global.length },
-    { key: "industry", label: TREND_SECTION_LABELS.industry, count: trendsBySection.industry.length },
-    { key: "brand", label: TREND_SECTION_LABELS.brand, count: trendsBySection.brand.length },
-  ];
+  // Sort tabs by section order: global → industry → brand
+  const sectionOrder: TrendSection[] = ["global", "industry", "brand"];
+  const sortedCategories = Array.from(categoryCounts.entries()).sort((a, b) => {
+    const ai = sectionOrder.indexOf(a[1].section);
+    const bi = sectionOrder.indexOf(b[1].section);
+    return ai - bi;
+  });
 
-  const visibleItems = activeSection === "all" ? trends : trendsBySection[activeSection] || [];
+  const filtered = activeFilter === "all"
+    ? trends
+    : trends.filter((t) => t.category === activeFilter);
 
   return (
     <div>
@@ -202,7 +175,6 @@ export default function DiscoverPage() {
         </div>
         <Button
           onClick={() => {
-            // Smart refresh: if stale (new day), fetch all; otherwise only refresh brand signals
             if (stale || trends.length === 0) {
               fetchTrends();
             } else {
@@ -223,51 +195,49 @@ export default function DiscoverPage() {
         </Button>
       </div>
 
-      {/* Section tabs */}
-      <div className="flex items-center border-b mb-6">
-        {SECTION_TABS.map((tab) => (
+      {/* Unified filter tabs */}
+      {trends.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-6">
           <button
-            key={tab.key}
-            onClick={() => setActiveSection(tab.key)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
-              activeSection === tab.key
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
+            onClick={() => setActiveFilter("all")}
+            className={`text-xs px-2.5 py-1 rounded-full transition-colors font-medium ${
+              activeFilter === "all"
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground hover:text-foreground"
             }`}
           >
-            {tab.label}
-            {tab.count > 0 && <span className="ml-1 text-xs text-muted-foreground">({tab.count})</span>}
+            全部 ({trends.length})
           </button>
-        ))}
-      </div>
+          {sortedCategories.map(([cat, { count, section }]) => {
+            const colors = SECTION_COLORS[section];
+            const isActive = activeFilter === cat;
+            return (
+              <button
+                key={cat}
+                onClick={() => setActiveFilter(cat)}
+                className={`text-xs px-2.5 py-1 rounded-full transition-colors font-medium ${
+                  isActive
+                    ? `${colors.activeBg} ${colors.activeText}`
+                    : `${colors.bg} ${colors.text} hover:opacity-80`
+                }`}
+              >
+                {TREND_CATEGORY_LABELS[cat as TrendCategory] || cat} ({count})
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded-md text-sm">{error}</div>
       )}
 
       {trends.length > 0 ? (
-        activeSection === "all" ? (
-          // All sections stacked
-          <div className="space-y-8">
-            {(["global", "industry", "brand"] as TrendSection[]).map((section) => {
-              const items = trendsBySection[section];
-              if (items.length === 0) return null;
-              return (
-                <SectionBlock
-                  key={section}
-                  title={TREND_SECTION_LABELS[section]}
-                  items={items}
-                />
-              );
-            })}
-          </div>
-        ) : (
-          // Single section with category filters
-          <SectionBlock
-            title={TREND_SECTION_LABELS[activeSection]}
-            items={visibleItems}
-          />
-        )
+        <div className="grid grid-cols-3 gap-3">
+          {filtered.map((trend) => (
+            <TrendCard key={trend.id} trend={trend} />
+          ))}
+        </div>
       ) : (
         <div className="text-center py-20">
           <h3 className="text-lg font-medium mb-2">热点池为空</h3>
