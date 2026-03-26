@@ -98,6 +98,7 @@ export default function DiscoverPage() {
   const [trendsDate, setTrendsDate] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<TrendSection | "all">("all");
 
   useEffect(() => {
     const acc = getAccount();
@@ -155,7 +156,6 @@ export default function DiscoverPage() {
 
   const stale = isTrendsStale();
   const isLoading = loading !== null;
-  const [activeSection, setActiveSection] = useState<TrendSection | "all">("all");
 
   const trendsBySection: Record<TrendSection, Trend[]> = { global: [], industry: [], brand: [] };
   for (const t of trends) {
