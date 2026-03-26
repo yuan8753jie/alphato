@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { RefreshCw } from "lucide-react";
 import {
   getAccount, getTrends, saveTrends, isTrendsStale,
 } from "@/lib/store";
@@ -195,14 +196,27 @@ export default function DiscoverPage() {
             {trendsDate && <span className="ml-2">· 更新于 {trendsDate}</span>}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={() => fetchTrends()} disabled={isLoading} variant={stale ? "default" : "outline"} size="sm">
-            {loading === "all" ? "搜索中（约60秒）..." : stale ? "抓取全部热点" : "刷新全部"}
-          </Button>
-          <Button onClick={() => fetchTrends(["brand"])} disabled={isLoading} variant="outline" size="sm">
-            {loading === "brand" ? "搜索中..." : "刷新品牌信号"}
-          </Button>
-        </div>
+        <Button
+          onClick={() => {
+            // Smart refresh: if stale (new day), fetch all; otherwise only refresh brand signals
+            if (stale || trends.length === 0) {
+              fetchTrends();
+            } else {
+              fetchTrends(["brand"]);
+            }
+          }}
+          disabled={isLoading}
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+        >
+          <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
+          {isLoading
+            ? "刷新中..."
+            : stale || trends.length === 0
+              ? "抓取热点"
+              : "刷新"}
+        </Button>
       </div>
 
       {/* Section tabs */}
@@ -256,8 +270,9 @@ export default function DiscoverPage() {
           <p className="text-sm text-muted-foreground mb-4">
             AI 将搜索实时热搜、行业动态、体育赛事、综艺影视、品牌信号等
           </p>
-          <Button onClick={() => fetchTrends()} disabled={isLoading} size="lg">
-            {loading === "all" ? "正在搜索（约60秒）..." : "开始抓取热点"}
+          <Button onClick={() => fetchTrends()} disabled={isLoading} size="lg" className="gap-2">
+            <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} />
+            {isLoading ? "正在搜索（约60秒）..." : "开始抓取热点"}
           </Button>
         </div>
       )}

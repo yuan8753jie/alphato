@@ -59,3 +59,22 @@ export function extractTextFromResponse(data: Record<string, unknown>): string {
   const candidates = (data as any).candidates;
   return candidates?.[0]?.content?.parts?.[0]?.text || "";
 }
+
+export interface TokenUsage {
+  promptTokens: number;
+  candidatesTokens: number;
+  totalTokens: number;
+  thoughtsTokens?: number;
+}
+
+export function extractTokenUsage(data: Record<string, unknown>): TokenUsage | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const usage = (data as any).usageMetadata;
+  if (!usage) return null;
+  return {
+    promptTokens: usage.promptTokenCount || 0,
+    candidatesTokens: usage.candidatesTokenCount || 0,
+    totalTokens: usage.totalTokenCount || 0,
+    thoughtsTokens: usage.thoughtsTokenCount || undefined,
+  };
+}
