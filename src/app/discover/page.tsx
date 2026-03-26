@@ -7,8 +7,89 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   getAccount, getTrends, saveTrends, isTrendsStale,
 } from "@/lib/store";
-import type { Account, Trend, TrendSection } from "@/lib/types";
+import type { Account, Trend, TrendSection, TrendCategory } from "@/lib/types";
 import { TREND_CATEGORY_LABELS, TREND_SECTION_LABELS } from "@/lib/types";
+
+function TrendCard({ trend }: { trend: Trend }) {
+  return (
+    <Card className="hover:shadow-sm transition-shadow">
+      <CardContent className="p-3">
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <span className="font-medium text-sm leading-snug">{trend.title}</span>
+          <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">{trend.heatScore}/10</span>
+        </div>
+        <p className="text-xs text-muted-foreground line-clamp-3">{trend.description}</p>
+        <div className="flex items-center gap-1.5 mt-2">
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-medium">
+            {TREND_CATEGORY_LABELS[trend.category] || trend.category}
+          </span>
+          <span className="text-[10px] text-muted-foreground truncate">{trend.source}</span>
+          {trend.eventDate && <span className="text-[10px] text-muted-foreground shrink-0">{trend.eventDate}</span>}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SectionBlock({ title, items, date }: {
+  title: string;
+  items: Trend[];
+  date?: string | null;
+}) {
+  const [activeCategory, setActiveCategory] = useState<TrendCategory | "all">("all");
+
+  // Get unique categories with counts
+  const categoryCounts = new Map<TrendCategory, number>();
+  for (const t of items) {
+    categoryCounts.set(t.category, (categoryCounts.get(t.category) || 0) + 1);
+  }
+  const categories = Array.from(categoryCounts.entries());
+
+  const filtered = activeCategory === "all"
+    ? items
+    : items.filter((t) => t.category === activeCategory);
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <h2 className="text-base font-semibold">{title}</h2>
+        <span className="text-xs text-muted-foreground">({items.length})</span>
+        {date && <span className="text-xs text-muted-foreground ml-auto">{date}</span>}
+      </div>
+
+      {/* Category filter tabs */}
+      {categories.length > 1 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          <button
+            onClick={() => setActiveCategory("all")}
+            className={`text-xs px-2 py-1 rounded-md transition-colors ${
+              activeCategory === "all" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80 text-muted-foreground"
+            }`}
+          >
+            全部 ({items.length})
+          </button>
+          {categories.map(([cat, count]) => (
+            <button
+              key={cat}
+              onClick={() => setActiveCategory(cat)}
+              className={`text-xs px-2 py-1 rounded-md transition-colors ${
+                activeCategory === cat ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80 text-muted-foreground"
+              }`}
+            >
+              {TREND_CATEGORY_LABELS[cat] || cat} ({count})
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-3">
+        {filtered.map((trend) => (
+          <TrendCard key={trend.id} trend={trend} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function DiscoverPage() {
   const router = useRouter();
@@ -111,32 +192,12 @@ export default function DiscoverPage() {
             const items = trendsBySection[section];
             if (items.length === 0) return null;
             return (
-              <div key={section}>
-                <div className="flex items-center gap-2 mb-3">
-                  <h2 className="text-base font-semibold">{TREND_SECTION_LABELS[section]}</h2>
-                  <span className="text-xs text-muted-foreground">({items.length})</span>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  {items.map((trend) => (
-                    <Card key={trend.id} className="hover:shadow-sm transition-shadow">
-                      <CardContent className="p-3">
-                        <div className="flex items-start justify-between gap-2 mb-1">
-                          <span className="font-medium text-sm leading-snug">{trend.title}</span>
-                          <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">{trend.heatScore}/10</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground line-clamp-3">{trend.description}</p>
-                        <div className="flex items-center gap-1.5 mt-2">
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-medium">
-                            {TREND_CATEGORY_LABELS[trend.category] || trend.category}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground truncate">{trend.source}</span>
-                          {trend.eventDate && <span className="text-[10px] text-muted-foreground shrink-0">{trend.eventDate}</span>}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
+              <SectionBlock
+                key={section}
+                title={TREND_SECTION_LABELS[section]}
+                items={items}
+                date={section === "global" ? trendsDate : undefined}
+              />
             );
           })}
         </div>
