@@ -28,7 +28,14 @@ function TrendCard({ trend }: { trend: Trend }) {
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-medium">
             {TREND_CATEGORY_LABELS[trend.category] || trend.category}
           </span>
-          <span className="text-[10px] text-muted-foreground truncate">{trend.source}</span>
+          <a
+            href={`https://www.google.com/search?q=${encodeURIComponent(trend.title + " " + trend.source)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] text-muted-foreground truncate hover:text-foreground hover:underline"
+          >
+            {trend.source} ↗
+          </a>
           {trend.eventDate && <span className="text-[10px] text-muted-foreground shrink-0">{trend.eventDate}</span>}
         </div>
       </CardContent>
