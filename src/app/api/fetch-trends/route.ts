@@ -78,7 +78,7 @@ const ROUNDS: Round[] = [
 严格要求：全部来自搜索结果，禁止编造，每条标注来源。
 ${SAFETY_FILTER}
 返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"platform_hot 或 social_meme","source":"来源网站","heatScore":1到10,"relevance":"内容创作价值","warning":"仅竞品负面时填写，否则不要此字段"}]`,
+[{"title":"","description":"2-3句","category":"platform_hot 或 social_meme","source":"来源网站名","sourceUrl":"搜索到的原文链接URL","heatScore":1到10,"relevance":"内容创作价值","warning":"仅竞品负面时填写，否则不要此字段"}]`,
   },
   {
     section: "global",
@@ -93,7 +93,7 @@ ${SAFETY_FILTER}
 严格要求：来自搜索结果，标注来源和日期。
 ${SAFETY_FILTER}
 返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"sports_event 或 entertainment 或 holiday_calendar","source":"来源","heatScore":1到10,"relevance":"内容创作价值","eventDate":"YYYY-MM-DD","warning":"仅竞品负面时填写，否则不要此字段"}]`,
+[{"title":"","description":"2-3句","category":"sports_event 或 entertainment 或 holiday_calendar","source":"来源名","sourceUrl":"原文链接","heatScore":1到10,"relevance":"内容创作价值","eventDate":"YYYY-MM-DD","warning":"仅竞品负面时填写，否则不要此字段"}]`,
   },
   // --- Industry (needs industry keyword) ---
   {
@@ -109,7 +109,7 @@ ${SAFETY_FILTER}
 严格要求：来自搜索结果，标注来源。
 ${SAFETY_FILTER}
 返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"industry_news 或 trivia 或 history_today","source":"来源","heatScore":1到10,"relevance":"与${industry}的关联","warning":"仅竞品负面时填写，否则不要此字段"}]`,
+[{"title":"","description":"2-3句","category":"industry_news 或 trivia 或 history_today","source":"来源名","sourceUrl":"原文链接","heatScore":1到10,"relevance":"与${industry}的关联","warning":"仅竞品负面时填写，否则不要此字段"}]`,
   },
   // --- Brand signals (needs brand name + benchmark accounts) ---
   {
@@ -126,7 +126,7 @@ ${SAFETY_FILTER}
       parts.push(`严格要求：来自搜索结果，标注来源。
 ${SAFETY_FILTER}
 返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"brand_related","source":"来源","heatScore":1到10,"relevance":"对品牌内容创作的价值","warning":"仅竞品负面时填写，否则不要此字段"}]`);
+[{"title":"","description":"2-3句","category":"brand_related","source":"来源名","sourceUrl":"原文链接","heatScore":1到10,"relevance":"对品牌内容创作的价值","warning":"仅竞品负面时填写，否则不要此字段"}]`);
 
       return parts.join("\n\n");
     },
@@ -181,6 +181,7 @@ export async function POST(req: NextRequest) {
           description: t.description || "",
           category: normalizeCategory(t.category, round.defaultCategory),
           source: t.source || "",
+          sourceUrl: t.sourceUrl || undefined,
           heatScore: t.heatScore || 5,
           relevance: t.relevance || "",
           eventDate: t.eventDate || undefined,

@@ -100,7 +100,8 @@ export interface Trend {
   description: string;
   category: TrendCategory;
   section: TrendSection;  // 所属板块
-  source: string;         // 信息来源
+  source: string;         // 信息来源名称
+  sourceUrl?: string;     // 信息来源链接
   heatScore: number;      // 1-10
   relevance: string;      // 关联说明
   eventDate?: string;     // 预测事件日期
