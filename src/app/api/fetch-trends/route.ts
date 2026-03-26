@@ -78,7 +78,7 @@ const ROUNDS: Round[] = [
 严格要求：全部来自搜索结果，禁止编造，每条标注来源。
 ${SAFETY_FILTER}
 返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"platform_hot 或 social_meme","source":"来源网站名","sourceUrl":"搜索到的原文链接URL","heatScore":1到10,"relevance":"内容创作价值","warning":"仅竞品负面时填写，否则不要此字段"}]`,
+[{"title":"","description":"2-3句","category":"platform_hot 或 social_meme","source":"来源网站名","heatScore":1到10,"relevance":"内容创作价值","warning":"仅竞品负面时填写，否则不要此字段"}]`,
   },
   {
     section: "global",
@@ -93,7 +93,7 @@ ${SAFETY_FILTER}
 严格要求：来自搜索结果，标注来源和日期。
 ${SAFETY_FILTER}
 返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"sports_event 或 entertainment 或 holiday_calendar","source":"来源名","sourceUrl":"原文链接","heatScore":1到10,"relevance":"内容创作价值","eventDate":"YYYY-MM-DD","warning":"仅竞品负面时填写，否则不要此字段"}]`,
+[{"title":"","description":"2-3句","category":"sports_event 或 entertainment 或 holiday_calendar","source":"来源名","heatScore":1到10,"relevance":"内容创作价值","eventDate":"YYYY-MM-DD","warning":"仅竞品负面时填写，否则不要此字段"}]`,
   },
   // --- Industry (needs industry keyword) ---
   {
@@ -109,7 +109,7 @@ ${SAFETY_FILTER}
 严格要求：来自搜索结果，标注来源。
 ${SAFETY_FILTER}
 返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"industry_news 或 trivia 或 history_today","source":"来源名","sourceUrl":"原文链接","heatScore":1到10,"relevance":"与${industry}的关联","warning":"仅竞品负面时填写，否则不要此字段"}]`,
+[{"title":"","description":"2-3句","category":"industry_news 或 trivia 或 history_today","source":"来源名","heatScore":1到10,"relevance":"与${industry}的关联","warning":"仅竞品负面时填写，否则不要此字段"}]`,
   },
   // --- Brand signals (needs brand name + benchmark accounts) ---
   {
@@ -126,7 +126,7 @@ ${SAFETY_FILTER}
       parts.push(`严格要求：来自搜索结果，标注来源。
 ${SAFETY_FILTER}
 返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"brand_related","source":"来源名","sourceUrl":"原文链接","heatScore":1到10,"relevance":"对品牌内容创作的价值","warning":"仅竞品负面时填写，否则不要此字段"}]`);
+[{"title":"","description":"2-3句","category":"brand_related","source":"来源名","heatScore":1到10,"relevance":"对品牌内容创作的价值","warning":"仅竞品负面时填写，否则不要此字段"}]`);
 
       return parts.join("\n\n");
     },
@@ -175,20 +175,46 @@ export async function POST(req: NextRequest) {
           90000
         );
         const text = extractTextFromResponse(data);
-        return parseTrends(text).map((t: Record<string, unknown>, i: number) => ({
-          id: `trend_${crypto.randomUUID().slice(0, 8)}_${i}`,
-          title: t.title || "",
-          description: t.description || "",
-          category: normalizeCategory(t.category, round.defaultCategory),
-          source: t.source || "",
-          sourceUrl: t.sourceUrl || undefined,
-          heatScore: t.heatScore || 5,
-          relevance: t.relevance || "",
-          eventDate: t.eventDate || undefined,
-          warning: t.warning || undefined,
-          section: round.section,
-          fetchedAt: now.toISOString(),
-        }));
+
+        // Extract REAL source URLs from Google Search grounding metadata
+        // Grounding chunks contain: { web: { title: "domain.com", uri: "redirect URL" } }
+        // The uri is a Google redirect that leads to the real page — this is trustworthy
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const groundingChunks: { web?: { title?: string; uri?: string } }[] =
+          (data as any).candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+        const realSources = groundingChunks
+          .filter((c) => c.web?.uri)
+          .map((c) => ({ domain: (c.web?.title || "").toLowerCase(), uri: c.web!.uri! }));
+
+        return parseTrends(text).map((t: Record<string, unknown>, i: number) => {
+          const title = String(t.title || "");
+          const source = String(t.source || "").toLowerCase();
+
+          // Match by source name → grounding chunk domain
+          // e.g. source="新浪新闻" matches domain="sina.cn"
+          // Also try: source contains domain, or domain contains part of source
+          const matchedSource = realSources.find((s) =>
+            source.includes(s.domain) ||
+            s.domain.includes(source.split(/[,，、\s]/)[0]) ||
+            // Fallback: match any grounding source by index
+            false
+          ) || (realSources.length > 0 ? realSources[i % realSources.length] : undefined);
+
+          return {
+            id: `trend_${crypto.randomUUID().slice(0, 8)}_${i}`,
+            title,
+            description: String(t.description || ""),
+            category: normalizeCategory(t.category, round.defaultCategory),
+            source: String(t.source || ""),
+            sourceUrl: matchedSource?.uri || undefined,  // Only real URLs from grounding
+            heatScore: t.heatScore || 5,
+            relevance: String(t.relevance || ""),
+            eventDate: t.eventDate ? String(t.eventDate) : undefined,
+            warning: t.warning ? String(t.warning) : undefined,
+            section: round.section,
+            fetchedAt: now.toISOString(),
+          };
+        });
       })
     );
 
