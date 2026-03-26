@@ -155,6 +155,7 @@ export default function DiscoverPage() {
 
   const stale = isTrendsStale();
   const isLoading = loading !== null;
+  const [activeSection, setActiveSection] = useState<TrendSection | "all">("all");
 
   const trendsBySection: Record<TrendSection, Trend[]> = { global: [], industry: [], brand: [] };
   for (const t of trends) {
@@ -162,9 +163,19 @@ export default function DiscoverPage() {
     if (trendsBySection[s]) trendsBySection[s].push(t);
   }
 
+  const SECTION_TABS: { key: TrendSection | "all"; label: string; count: number }[] = [
+    { key: "all", label: "全部", count: trends.length },
+    { key: "global", label: TREND_SECTION_LABELS.global, count: trendsBySection.global.length },
+    { key: "industry", label: TREND_SECTION_LABELS.industry, count: trendsBySection.industry.length },
+    { key: "brand", label: TREND_SECTION_LABELS.brand, count: trendsBySection.brand.length },
+  ];
+
+  const visibleItems = activeSection === "all" ? trends : trendsBySection[activeSection] || [];
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-bold">发现</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
@@ -182,25 +193,51 @@ export default function DiscoverPage() {
         </div>
       </div>
 
+      {/* Section tabs */}
+      <div className="flex items-center border-b mb-6">
+        {SECTION_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveSection(tab.key)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+              activeSection === tab.key
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {tab.label}
+            {tab.count > 0 && <span className="ml-1 text-xs text-muted-foreground">({tab.count})</span>}
+          </button>
+        ))}
+      </div>
+
       {error && (
         <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded-md text-sm">{error}</div>
       )}
 
       {trends.length > 0 ? (
-        <div className="space-y-8">
-          {(["global", "industry", "brand"] as TrendSection[]).map((section) => {
-            const items = trendsBySection[section];
-            if (items.length === 0) return null;
-            return (
-              <SectionBlock
-                key={section}
-                title={TREND_SECTION_LABELS[section]}
-                items={items}
-                date={section === "global" ? trendsDate : undefined}
-              />
-            );
-          })}
-        </div>
+        activeSection === "all" ? (
+          // All sections stacked
+          <div className="space-y-8">
+            {(["global", "industry", "brand"] as TrendSection[]).map((section) => {
+              const items = trendsBySection[section];
+              if (items.length === 0) return null;
+              return (
+                <SectionBlock
+                  key={section}
+                  title={TREND_SECTION_LABELS[section]}
+                  items={items}
+                />
+              );
+            })}
+          </div>
+        ) : (
+          // Single section with category filters
+          <SectionBlock
+            title={TREND_SECTION_LABELS[activeSection]}
+            items={visibleItems}
+          />
+        )
       ) : (
         <div className="text-center py-20">
           <h3 className="text-lg font-medium mb-2">热点池为空</h3>
