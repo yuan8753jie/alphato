@@ -49,18 +49,20 @@ function TrendCard({ trend }: { trend: Trend }) {
           <span className="font-medium text-sm leading-snug">{trend.title}</span>
           <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">{trend.heatScore}/10</span>
         </div>
-        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-          {predictive && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500 text-white font-semibold">
-              预测
-            </span>
-          )}
-          {trend.warning && (
-            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">
-              ⚠️ {trend.warning}
-            </span>
-          )}
-        </div>
+        {(predictive || trend.warning) && (
+          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+            {predictive && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500 text-white font-semibold">
+                预测
+              </span>
+            )}
+            {trend.warning && (
+              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">
+                ⚠️ {trend.warning}
+              </span>
+            )}
+          </div>
+        )}
         <p className="text-xs text-muted-foreground line-clamp-3">{trend.description}</p>
         <div className="flex items-center gap-1.5 mt-2 flex-wrap">
           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${colors.bg} ${colors.text}`}>
