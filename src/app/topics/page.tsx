@@ -23,14 +23,22 @@ const TYPE_COLORS: Record<TopicType, string> = {
   persona: "bg-purple-100 text-purple-800",
 };
 
+interface SelectedTrend {
+  originalIndex: number;
+  title: string;
+  relevanceScore: number;
+  reason: string;
+}
+
 export default function TopicsPage() {
   const router = useRouter();
   const [account, setAccount] = useState<Account | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [trends, setTrends] = useState<Trend[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null); // null | "selecting" | "generating"
   const [error, setError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<TopicType | "all">("all");
+  const [selectedTrends, setSelectedTrends] = useState<SelectedTrend[]>([]);
 
   useEffect(() => {
     const acc = getAccount();
@@ -42,8 +50,9 @@ export default function TopicsPage() {
 
   async function generateTopics() {
     if (!account || trends.length === 0) return;
-    setLoading(true);
+    setLoading("selecting");
     setError(null);
+    setSelectedTrends([]);
 
     try {
       const res = await fetch("/api/generate-topics", {
@@ -52,6 +61,12 @@ export default function TopicsPage() {
         body: JSON.stringify({ account, trends }),
       });
       const data = await res.json();
+
+      // Show selected trends from Phase 1
+      if (data.selectedTrends?.length > 0) {
+        setSelectedTrends(data.selectedTrends);
+      }
+
       if (data.success && data.topics?.length > 0) {
         const newTopics = [...data.topics, ...topics];
         setTopics(newTopics);
@@ -62,7 +77,7 @@ export default function TopicsPage() {
     } catch (err) {
       setError("请求失败：" + String(err));
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   }
 
@@ -83,7 +98,12 @@ export default function TopicsPage() {
           <h1 className="text-xl font-bold">选题</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             基于热点池为品牌策划的内容选题
-            {topics.length > 0 && <span className="ml-2">· 采用 {topics.filter((t) => t.status === "approved").length} · 待定 {topics.filter((t) => t.status === "pending").length}</span>}
+            {topics.length > 0 && (
+              <span className="ml-2">
+                · 采用 {topics.filter((t) => t.status === "approved").length}
+                · 待定 {topics.filter((t) => t.status === "pending").length}
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -93,8 +113,12 @@ export default function TopicsPage() {
             </Button>
           )}
           {trends.length > 0 && (
-            <Button onClick={generateTopics} disabled={loading} size="sm">
-              {loading ? "生成中..." : "生成选题"}
+            <Button onClick={generateTopics} disabled={loading !== null} size="sm">
+              {loading === "selecting"
+                ? "AI 正在分析热点相关度..."
+                : loading === "generating"
+                  ? "AI 正在创作选题..."
+                  : "生成选题"}
             </Button>
           )}
         </div>
@@ -104,6 +128,33 @@ export default function TopicsPage() {
         <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded-md text-sm">{error}</div>
       )}
 
+      {/* Phase 1 result: Selected trends */}
+      {selectedTrends.length > 0 && (
+        <Card className="mb-6">
+          <CardContent className="py-4">
+            <h3 className="text-sm font-semibold mb-3">
+              AI 从 {trends.length} 条热点中精选了 {selectedTrends.length} 条
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {selectedTrends.map((st, i) => (
+                <div
+                  key={i}
+                  className="text-xs px-2.5 py-1.5 rounded-lg border bg-muted/50 max-w-xs"
+                  title={st.reason}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium truncate">{st.title}</span>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{st.relevanceScore}/10</span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">{st.reason}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Topic cards */}
       {topics.length > 0 ? (
         <div className="space-y-4">
           {/* Type filter */}
@@ -128,7 +179,6 @@ export default function TopicsPage() {
             })}
           </div>
 
-          {/* Topic cards */}
           <div className="grid grid-cols-2 gap-4">
             {filtered.map((topic) => (
               <Card key={topic.id} className="hover:shadow-sm transition-shadow">
@@ -145,7 +195,12 @@ export default function TopicsPage() {
                     {topic.title}
                   </Link>
                   <p className="text-xs text-muted-foreground mb-1">{topic.angle}</p>
-                  <p className="text-xs line-clamp-3 mb-3">{topic.description}</p>
+                  <p className="text-xs line-clamp-3 mb-2">{topic.description}</p>
+                  {topic.relatedTrendIds?.length > 0 && (
+                    <p className="text-[10px] text-muted-foreground mb-2 line-clamp-1">
+                      基于：{topic.relatedTrendIds.join("、")}
+                    </p>
+                  )}
                   <div className="flex gap-1.5">
                     {(["approved", "hold", "rejected"] as TopicStatus[]).map((s) => (
                       <Button
@@ -169,11 +224,11 @@ export default function TopicsPage() {
           <h3 className="text-lg font-medium mb-2">选题池为空</h3>
           <p className="text-sm text-muted-foreground mb-4">
             {trends.length > 0
-              ? "热点已就绪，点击\"生成选题\"让 AI 按流量/信任/转化/人设四种类型策划"
+              ? `热点池有 ${trends.length} 条热点，AI 会先筛选最相关的，再生成选题`
               : "请先到「发现」页面抓取热点"}
           </p>
           {trends.length > 0 ? (
-            <Button onClick={generateTopics} disabled={loading} size="lg">
+            <Button onClick={generateTopics} disabled={loading !== null} size="lg">
               {loading ? "生成中..." : "生成选题"}
             </Button>
           ) : (

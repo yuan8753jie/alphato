@@ -4,6 +4,40 @@ import type { Account, Trend } from "@/lib/types";
 
 export const maxDuration = 120;
 
+function buildBrandContext(account: Account): string {
+  return [
+    `品牌：${account.brand.name}`,
+    `行业：${account.brand.industry}`,
+    `调性：${account.brand.tone}`,
+    account.brand.rules.length > 0
+      ? `红线规则：${account.brand.rules.join("；")}`
+      : "",
+    account.products.length > 0
+      ? `产品：\n${account.products.map((p) => `  - ${p.name}：${p.description}（卖点：${p.sellingPoints.join("、")}）`).join("\n")}`
+      : "",
+    account.personas.length > 0
+      ? `目标受众：\n${account.personas.map((p) => `  - ${p.name}：${p.description}`).join("\n")}`
+      : "",
+    account.brandMaterials?.length > 0
+      ? `品牌资料：\n${account.brandMaterials.map((m) => `  [${m.purpose}] ${m.extractedText.slice(0, 200)}`).join("\n")}`
+      : "",
+  ].filter(Boolean).join("\n");
+}
+
+function getPlatformName(platform: string): string {
+  return ({
+    douyin: "抖音", tiktok: "TikTok", xiaohongshu: "小红书",
+    instagram: "Instagram", kuaishou: "快手", wechat: "微信视频号",
+    youtube: "YouTube", bilibili: "Bilibili",
+  } as Record<string, string>)[platform] || "抖音";
+}
+
+function formatTrendList(trends: Trend[]): string {
+  return trends.map((t, i) =>
+    `${i + 1}. [${t.category}] ${t.title}：${t.description}（来源：${t.source}）`
+  ).join("\n");
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { account, trends } = (await req.json()) as {
@@ -11,129 +45,146 @@ export async function POST(req: NextRequest) {
       trends: Trend[];
     };
 
-    const brandContext = [
-      `品牌：${account.brand.name}`,
-      `行业：${account.brand.industry}`,
-      `调性：${account.brand.tone}`,
-      account.brand.rules.length > 0
-        ? `红线规则：${account.brand.rules.join("；")}`
-        : "",
-      account.products.length > 0
-        ? `产品：\n${account.products.map((p) => `  - ${p.name}：${p.description}（卖点：${p.sellingPoints.join("、")}）`).join("\n")}`
-        : "",
-      account.personas.length > 0
-        ? `目标受众：\n${account.personas.map((p) => `  - ${p.name}：${p.description}`).join("\n")}`
-        : "",
-      account.brandMaterials?.length > 0
-        ? `品牌资料：\n${account.brandMaterials.map((m) => `  [${m.purpose}] ${m.extractedText.slice(0, 300)}`).join("\n")}`
-        : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const brandContext = buildBrandContext(account);
+    const pName = getPlatformName(account.platform);
 
-    // Group trends by category for structured context
-    const trendsByCategory: Record<string, Trend[]> = {};
-    for (const t of trends) {
-      const cat = t.category || "other";
-      if (!trendsByCategory[cat]) trendsByCategory[cat] = [];
-      trendsByCategory[cat].push(t);
+    // ============================================================
+    // Phase 1: Trend Relevance Analysis — select the best 15~20
+    // ============================================================
+
+    const phase1Data = await geminiRequest("gemini-2.5-flash", {
+      contents: [{
+        parts: [{
+          text: `你是"${account.brand.name}"品牌的${pName}内容总监。
+
+## 你的品牌
+${brandContext}
+
+## 候选热点池（共${trends.length}条）
+${formatTrendList(trends)}
+
+## 任务
+从以上${trends.length}条热点中，精选 15~20 条最适合"${account.brand.name}"做${pName}内容的热点。
+
+选择标准：
+1. 与品牌行业（${account.brand.industry}）的关联度
+2. 与目标受众兴趣/痛点的匹配度
+3. 能否自然融入品牌产品
+4. 热点的时效性和传播潜力
+5. 是否符合品牌调性（不违反红线规则）
+
+返回 JSON 数组（只返回 JSON，不要其他文字）：
+[
+  {
+    "originalIndex": 原始编号（1开始）,
+    "title": "热点标题",
+    "relevanceScore": 1到10的品牌相关度评分,
+    "reason": "一句话说明为什么选这条（跟品牌/产品/受众的具体关联）"
+  }
+]
+
+按 relevanceScore 从高到低排序。`,
+        }],
+      }],
+    });
+
+    const phase1Text = extractTextFromResponse(phase1Data);
+    let selectedTrends: { originalIndex: number; title: string; relevanceScore: number; reason: string }[] = [];
+
+    try {
+      const m = phase1Text.match(/\[[\s\S]*\]/);
+      if (m) selectedTrends = JSON.parse(m[0]);
+    } catch { /* ignore */ }
+
+    if (selectedTrends.length === 0) {
+      return NextResponse.json({ success: false, error: "热点筛选失败，请重试" });
     }
 
-    const trendsText = Object.entries(trendsByCategory)
-      .map(([cat, items]) => {
-        const catLabel: Record<string, string> = {
-          platform_hot: "平台热搜",
-          industry_news: "行业动态",
-          social_meme: "社交热梗",
-          sports_event: "体育赛事",
-          entertainment: "综艺/影视",
-          holiday_calendar: "节日/节气",
-          brand_related: "品牌相关",
-          trivia: "冷知识",
-          history_today: "历史今天",
-        };
-        return `### ${catLabel[cat] || cat}\n${items.map((t) => `- ${t.title}：${t.description}（来源：${t.source}）`).join("\n")}`;
-      })
-      .join("\n\n");
+    // Build the selected trends text for Phase 2
+    const selectedTrendsText = selectedTrends.map((s, i) => {
+      const original = trends[s.originalIndex - 1];
+      const desc = original?.description || "";
+      return `${i + 1}. ${s.title}（相关度：${s.relevanceScore}/10）\n   ${desc}\n   选择理由：${s.reason}`;
+    }).join("\n\n");
 
-    const platformName = {
-      douyin: "抖音", tiktok: "TikTok", xiaohongshu: "小红书",
-      instagram: "Instagram", kuaishou: "快手", wechat: "微信视频号",
-      youtube: "YouTube", bilibili: "Bilibili",
-    }[account.platform] || "抖音";
+    // ============================================================
+    // Phase 2: Topic Generation — create topics from selected trends
+    // ============================================================
 
-    const data = await geminiRequest("gemini-2.5-flash", {
-      contents: [
-        {
-          parts: [
-            {
-              text: `你是一个顶级的${platformName}内容策划专家，擅长为品牌打造既有流量又有品牌质感的内容矩阵。
+    const phase2Data = await geminiRequest("gemini-2.5-flash", {
+      contents: [{
+        parts: [{
+          text: `你是一个顶级的${pName}内容策划专家。
 
 ## 品牌上下文
 ${brandContext}
 
-## 热点池（按类型分类）
-${trendsText}
+## 精选热点（已按品牌相关度筛选）
+${selectedTrendsText}
 
 ## 任务
-基于以上热点池和品牌上下文，为该品牌的${platformName}账号策划 **8 个内容选题**，严格按以下配比：
+基于以上精选热点，为"${account.brand.name}"的${pName}账号策划 **8 个内容选题**，严格按以下配比：
 
-- **流量型（traffic）3个**：蹭热点拉曝光，追求播放量和互动量，选题要有话题性和传播力
-- **信任型（trust）2个**：输出专业干货，建立品牌可信度，如品类知识、测评科普、行业洞察
-- **转化型（conversion）2个**：自然种草带货，突出产品卖点和使用场景，让观众产生购买欲
-- **人设型（persona）1个**：展示品牌/团队真实面，拉近与观众的距离，如幕后、日常、互动
+- **流量型（traffic）3个**：蹭热点拉曝光，追求播放量和互动，要有话题性和传播力
+- **信任型（trust）2个**：输出专业干货，建立品牌可信度，如品类知识、科普、洞察
+- **转化型（conversion）2个**：自然种草，突出产品卖点和使用场景，让观众想买
+- **人设型（persona）1个**：展示品牌真实面，拉近距离，如幕后、日常、互动
 
 要求：
-1. 每个选题必须有独特的切入角度，不是热点的简单复述
-2. 必须严格遵守品牌调性和红线规则
-3. 深入考虑目标受众的具体画像、兴趣和痛点
-4. 选题标题要像一个真实的${platformName}爆款标题——短、有力、有悬念或共鸣
-5. 产品融入要自然，不能硬广
-6. 优先使用热点池中有真实来源的素材
+1. 每个选题要有独特创意角度，不是热点的简单复述
+2. 必须遵守品牌调性和红线规则
+3. 标题要像真实的${pName}爆款——短、有力、有悬念或共鸣
+4. 产品融入要自然，不能硬广
+5. 明确标注基于哪条精选热点
 
-请以 JSON 数组格式返回（只返回 JSON，不要其他文字）：
-
+返回 JSON 数组（只返回 JSON，不要其他文字）：
 [
   {
-    "title": "选题标题（像真实的${platformName}视频标题）",
+    "title": "选题标题",
     "type": "traffic / trust / conversion / persona",
-    "angle": "切入角度（为什么选这个角度，好在哪里）",
-    "description": "内容概要（3-5句话，描述这条视频具体怎么做）",
-    "relatedTrendIds": ["关联的热点标题1", "关联的热点标题2"],
-    "estimatedAppeal": "目标受众为什么会想看这条"
+    "angle": "切入角度说明",
+    "description": "3-5句内容概要，描述这条视频具体怎么做",
+    "basedOnTrends": ["基于的精选热点标题1", "精选热点标题2"],
+    "estimatedAppeal": "目标受众为什么会想看"
   }
 ]`,
-            },
-          ],
-        },
-      ],
+        }],
+      }],
     });
 
-    const text = extractTextFromResponse(data);
+    const phase2Text = extractTextFromResponse(phase2Data);
 
+    let topics: Record<string, unknown>[] = [];
     try {
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const topics = JSON.parse(jsonMatch[0]).map(
-          (t: Record<string, unknown>, i: number) => ({
-            id: `topic_${Date.now()}_${i}`,
-            title: t.title || "",
-            type: t.type || "traffic",
-            angle: t.angle || "",
-            description: t.description || "",
-            relatedTrendIds: Array.isArray(t.relatedTrendIds) ? t.relatedTrendIds : [],
-            estimatedAppeal: t.estimatedAppeal || "",
-            status: "pending",
-            createdAt: new Date().toISOString(),
-          })
-        );
-        return NextResponse.json({ success: true, topics });
-      }
-    } catch {
-      // Fall through
+      const m = phase2Text.match(/\[[\s\S]*\]/);
+      if (m) topics = JSON.parse(m[0]);
+    } catch { /* ignore */ }
+
+    if (topics.length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: "选题生成失败，请重试",
+        selectedTrends, // Still return Phase 1 results for debugging
+      });
     }
 
-    return NextResponse.json({ success: true, topics: [], raw: text });
+    const formattedTopics = topics.map((t, i) => ({
+      id: `topic_${Date.now()}_${i}`,
+      title: String(t.title || ""),
+      type: String(t.type || "traffic"),
+      angle: String(t.angle || ""),
+      description: String(t.description || ""),
+      relatedTrendIds: Array.isArray(t.basedOnTrends) ? t.basedOnTrends : [],
+      estimatedAppeal: String(t.estimatedAppeal || ""),
+      status: "pending" as const,
+      createdAt: new Date().toISOString(),
+    }));
+
+    return NextResponse.json({
+      success: true,
+      topics: formattedTopics,
+      selectedTrends, // Return Phase 1 results so UI can show them
+    });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
