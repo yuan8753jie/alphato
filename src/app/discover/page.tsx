@@ -43,7 +43,8 @@ function TrendCard({ trend }: { trend: Trend }) {
   const predictive = isPredictive(trend);
 
   return (
-    <Card className={`hover:shadow-md transition-all relative z-0 hover:z-10 ${trend.warning ? "border-amber-300 bg-amber-50/30" : ""} group`}>
+    <div className="relative group">
+    <Card className={`hover:shadow-md transition-shadow ${trend.warning ? "border-amber-300 bg-amber-50/30" : ""} group-hover:absolute group-hover:inset-x-0 group-hover:top-0 group-hover:z-20`}>
       <CardContent className="p-3">
         <div className="flex items-start justify-between gap-2 mb-1">
           <span className="font-medium text-sm leading-snug">{trend.title}</span>
@@ -87,6 +88,7 @@ function TrendCard({ trend }: { trend: Trend }) {
         </div>
       </CardContent>
     </Card>
+    </div>
   );
 }
 
