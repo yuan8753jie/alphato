@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { geminiRequest, extractTextFromResponse } from "@/lib/gemini";
-import type { TrendCategory } from "@/lib/types";
+import type { TrendCategory, TrendSection } from "@/lib/types";
 
 export const maxDuration = 120;
 
@@ -23,6 +23,30 @@ function parseTrends(text: string): Record<string, unknown>[] {
   return [];
 }
 
+// ============================================================
+// Brand safety filter
+// ============================================================
+
+const SAFETY_FILTER = `
+品牌安全过滤（必须严格执行）：
+直接剔除：政治敏感、负面社会新闻、明星塌房、自然灾害、宗教民族争议、公共卫生恐慌、未经证实的谣言、涉及未成年人的负面新闻。
+例外：竞品负面新闻保留，但加上 "warning": "竞品负面"。`;
+
+const JSON_FORMAT = `返回 JSON 数组（只返回 JSON，不要其他文字），每条包含：
+{"title":"标题","description":"2-3句描述","source":"来源网站名","heatScore":1到10,"relevance":"内容创作关联说明"}
+如有预计日期加 "eventDate":"YYYY-MM-DD"，如有竞品负面加 "warning":"竞品负面"。`;
+
+// ============================================================
+// 9 category agents — each one focused on a single category
+// ============================================================
+
+interface Agent {
+  category: TrendCategory;
+  section: TrendSection;
+  count: string; // "10~15" etc.
+  prompt: (c: Ctx) => string;
+}
+
 interface Ctx {
   pName: string;
   industry: string;
@@ -34,108 +58,119 @@ interface Ctx {
   benchmarkNames: string[];
 }
 
-// ============================================================
-// Brand safety filter — appended to every search round prompt
-// ============================================================
-
-const SAFETY_FILTER = `
-
-品牌安全过滤（必须严格执行）：
-直接剔除以下类型的内容，不要返回：
-- 政治敏感：国家领导人、国际冲突、领土争议、政策争议、政治运动
-- 负面社会新闻：犯罪、事故、灾难、死亡、暴力事件
-- 明星塌房：出轨、吸毒、违法、粉丝对立
-- 自然灾害：地震、洪水、台风等
-- 宗教/民族争议
-- 公共卫生恐慌：食品安全丑闻、疫情恐慌
-- 未经证实的谣言/爆料
-- 涉及未成年人的负面新闻
-
-例外：如果某条热点涉及竞品的负面新闻（如竞品食品安全问题、竞品公关危机等），仍然保留，但在返回的 JSON 中加上 "warning": "竞品负面" 字段。这类热点需要谨慎使用，但对品牌有参考价值。
-
-对于正常的热点，不需要 warning 字段。`;
-
-// ============================================================
-// Search round definitions — grouped into 3 sections
-// ============================================================
-
-interface Round {
-  section: "global" | "industry" | "brand";
-  defaultCategory: TrendCategory;
-  prompt: (c: Ctx) => string;
-}
-
-const ROUNDS: Round[] = [
-  // --- Global (no brand/industry context) ---
+const AGENTS: Agent[] = [
   {
+    category: "platform_hot",
     section: "global",
-    defaultCategory: "platform_hot",
+    count: "10~15",
     prompt: ({ pName, today }) =>
-      `搜索${today}${pName}平台的热搜榜/热门话题，以及当前社交媒体上正在流行的梗和表达方式。
-
-搜索建议："${pName}热搜榜"、"最近流行梗"、"抖音热梗 2026"
-
-严格要求：全部来自搜索结果，禁止编造，每条标注来源。
+      `你是${pName}平台热搜分析师。搜索${today}${pName}平台的热搜榜和热门话题。
+搜索建议："${pName}热搜榜"、"${pName}今日热门"
+请返回 10~15 条当前最热门的话题。每条必须来自搜索结果，标注来源。
 ${SAFETY_FILTER}
-返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"platform_hot 或 social_meme","source":"来源网站名","heatScore":1到10,"relevance":"内容创作价值","warning":"仅竞品负面时填写，否则不要此字段"}]`,
+${JSON_FORMAT}`,
   },
   {
+    category: "social_meme",
     section: "global",
-    defaultCategory: "sports_event",
+    count: "10~15",
+    prompt: ({ today }) =>
+      `你是社交媒体梗文化研究员。搜索${today}前后社交媒体上正在流行的梗、热门表达方式、网络流行语。
+搜索建议："最近流行梗 2026"、"抖音热梗"、"网络流行语"、"社交媒体热梗"
+请返回 10~15 条正在流行的梗/表达。每条必须来自搜索结果，标注来源。
+${SAFETY_FILTER}
+${JSON_FORMAT}`,
+  },
+  {
+    category: "sports_event",
+    section: "global",
+    count: "10~15",
     prompt: ({ year, month }) =>
-      `搜索${year}年${month}月至${Math.min(month + 2, 12)}月期间的重大事件：
-
-1. 体育赛事（搜索"${year}年${month}月 体育赛事"）
-2. 热门综艺/即将上映电影电视剧（搜索"${year}年${month}月 热门综艺 上映电影"）
-3. 节日、节气、纪念日（搜索"${year}年${month}月 节日节气"）
-
-严格要求：来自搜索结果，标注来源和日期。
+      `你是体育赛事日历专家。搜索${year}年${month}月至${Math.min(month + 3, 12)}月期间的重大体育赛事。
+搜索建议："${year}年体育赛事日程"、"${year}年${month}月体育赛事"、"近期体育比赛"
+请返回 10~15 场即将举行或正在进行的重要赛事。每条标注日期和来源。
 ${SAFETY_FILTER}
-返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"sports_event 或 entertainment 或 holiday_calendar","source":"来源名","heatScore":1到10,"relevance":"内容创作价值","eventDate":"YYYY-MM-DD","warning":"仅竞品负面时填写，否则不要此字段"}]`,
+${JSON_FORMAT}`,
   },
-  // --- Industry (needs industry keyword) ---
   {
+    category: "entertainment",
+    section: "global",
+    count: "10~15",
+    prompt: ({ year, month }) =>
+      `你是影视综艺情报员。搜索${year}年${month}月至${Math.min(month + 2, 12)}月的热门综艺节目、即将上映的电影和电视剧。
+搜索建议："${year}年${month}月上映电影"、"${year}年热门综艺"、"最近热播电视剧"
+请返回 10~15 部作品。每条标注上映/播出日期和来源。
+${SAFETY_FILTER}
+${JSON_FORMAT}`,
+  },
+  {
+    category: "holiday_calendar",
+    section: "global",
+    count: "10~15",
+    prompt: ({ year, month }) =>
+      `你是节日节气日历专家。搜索${year}年${month}月至${Math.min(month + 3, 12)}月的节日、节气、纪念日、国际日。
+搜索建议："${year}年${month}月节日节气"、"${year}年节假日安排"、"国际纪念日 ${month}月"
+请返回 10~15 个重要日期。每条标注日期和来源。
+${SAFETY_FILTER}
+${JSON_FORMAT}`,
+  },
+  {
+    category: "industry_news",
     section: "industry",
-    defaultCategory: "industry_news",
-    prompt: ({ industry, today, month, day }) =>
-      `搜索以下与"${industry}"行业相关的内容：
-
-1. ${industry}行业最新新闻动态（搜索"${industry} 最新新闻 ${today}"）
-2. ${industry}品类的冷知识、反常识内容（搜索"${industry} 冷知识"）
-3. 历史上的${month}月${day}日发生过的有趣事件（搜索"历史上的今天 ${month}月${day}日"）
-
-严格要求：来自搜索结果，标注来源。
+    count: "10~15",
+    prompt: ({ industry, today }) =>
+      `你是${industry}行业分析师。搜索${today}前后"${industry}"行业的最新新闻、市场动态、企业动向。
+搜索建议："${industry}行业新闻"、"${industry}市场动态"、"${industry}企业最新"
+请返回 10~15 条行业资讯。每条必须来自搜索结果，标注来源。
 ${SAFETY_FILTER}
-返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"industry_news 或 trivia 或 history_today","source":"来源名","heatScore":1到10,"relevance":"与${industry}的关联","warning":"仅竞品负面时填写，否则不要此字段"}]`,
+${JSON_FORMAT}`,
   },
-  // --- Brand signals (needs brand name + benchmark accounts) ---
   {
+    category: "trivia",
+    section: "industry",
+    count: "10~15",
+    prompt: ({ industry }) =>
+      `你是${industry}品类的冷知识收集者。搜索与"${industry}"相关的冷知识、反常识内容、有趣的科普知识。
+搜索建议："${industry}冷知识"、"${industry}你不知道的"、"${industry}有趣事实"、"${industry}科普"
+请返回 10~15 条有趣且可验证的冷知识。每条必须来自搜索结果，标注来源。
+${SAFETY_FILTER}
+${JSON_FORMAT}`,
+  },
+  {
+    category: "history_today",
+    section: "industry",
+    count: "10~15",
+    prompt: ({ month, day }) =>
+      `你是历史事件研究员。搜索历史上的${month}月${day}日发生过的有趣、积极、适合内容创作的事件。
+搜索建议："历史上的今天 ${month}月${day}日"、"${month}月${day}日大事记"
+请返回 10~15 件历史事件。每条必须来自搜索结果，标注来源。
+${SAFETY_FILTER}
+${JSON_FORMAT}`,
+  },
+  {
+    category: "brand_related",
     section: "brand",
-    defaultCategory: "brand_related",
+    count: "10~15",
     prompt: ({ brandName, benchmarkNames }) => {
-      const parts = [`搜索与"${brandName}"品牌相关的最新动态：
-1. 品牌最新新闻、活动、代言人动态（搜索"${brandName} 最新动态"、"${brandName} 代言人"）`];
+      let text = `你是品牌情报分析师。搜索与"${brandName}"品牌相关的最新动态：
+1. 品牌新闻、活动、代言人动态（搜索"${brandName} 最新动态"、"${brandName} 代言人"、"${brandName} 新品"）`;
 
       if (benchmarkNames.length > 0) {
-        parts.push(`2. 对标/竞品账号的近期内容动态：${benchmarkNames.map((n) => `搜索"${n} 抖音 最新"`).join("、")}`);
+        text += `\n2. 竞品/对标品牌动态：${benchmarkNames.map((n) => `搜索"${n} 最新动态"`).join("、")}`;
       }
 
-      parts.push(`严格要求：来自搜索结果，标注来源。
+      text += `\n请返回 10~15 条品牌相关资讯。每条必须来自搜索结果，标注来源。
 ${SAFETY_FILTER}
-返回 JSON 数组（只返回 JSON）：
-[{"title":"","description":"2-3句","category":"brand_related","source":"来源名","heatScore":1到10,"relevance":"对品牌内容创作的价值","warning":"仅竞品负面时填写，否则不要此字段"}]`);
+${JSON_FORMAT}`;
 
-      return parts.join("\n\n");
+      return text;
     },
   },
 ];
 
 export async function POST(req: NextRequest) {
   try {
-    const { industry, platform, brandName, benchmarkAccounts, sections } = await req.json();
+    const { industry, platform, brandName, benchmarkAccounts, categories } = await req.json();
 
     const pName: string = ({
       douyin: "抖音", tiktok: "TikTok", xiaohongshu: "小红书",
@@ -157,28 +192,26 @@ export async function POST(req: NextRequest) {
         .filter(Boolean),
     };
 
-    // Filter rounds by requested sections, or run all
-    const requestedSections = sections as string[] | undefined;
-    const roundsToRun = requestedSections
-      ? ROUNDS.filter((r) => requestedSections.includes(r.section))
-      : ROUNDS;
+    // Allow fetching specific categories, or all
+    const requestedCategories = categories as string[] | undefined;
+    const agentsToRun = requestedCategories
+      ? AGENTS.filter((a) => requestedCategories.includes(a.category))
+      : AGENTS;
 
-    // Run all rounds in parallel
+    // Run ALL agents in parallel — each one is a focused search
     const results = await Promise.allSettled(
-      roundsToRun.map(async (round) => {
+      agentsToRun.map(async (agent) => {
         const data = await geminiRequest(
           "gemini-2.5-flash",
           {
-            contents: [{ parts: [{ text: round.prompt(ctx) }] }],
+            contents: [{ parts: [{ text: agent.prompt(ctx) }] }],
             tools: [{ googleSearch: {} }],
           },
           90000
         );
         const text = extractTextFromResponse(data);
 
-        // Extract REAL source URLs from Google Search grounding metadata
-        // Grounding chunks contain: { web: { title: "domain.com", uri: "redirect URL" } }
-        // The uri is a Google redirect that leads to the real page — this is trustworthy
+        // Real source URLs from Google Search grounding metadata
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const groundingChunks: { web?: { title?: string; uri?: string } }[] =
           (data as any).candidates?.[0]?.groundingMetadata?.groundingChunks || [];
@@ -187,31 +220,25 @@ export async function POST(req: NextRequest) {
           .map((c) => ({ domain: (c.web?.title || "").toLowerCase(), uri: c.web!.uri! }));
 
         return parseTrends(text).map((t: Record<string, unknown>, i: number) => {
-          const title = String(t.title || "");
           const source = String(t.source || "").toLowerCase();
-
-          // Match by source name → grounding chunk domain
-          // e.g. source="新浪新闻" matches domain="sina.cn"
-          // Also try: source contains domain, or domain contains part of source
           const matchedSource = realSources.find((s) =>
             source.includes(s.domain) ||
             s.domain.includes(source.split(/[,，、\s]/)[0]) ||
-            // Fallback: match any grounding source by index
             false
           ) || (realSources.length > 0 ? realSources[i % realSources.length] : undefined);
 
           return {
             id: `trend_${crypto.randomUUID().slice(0, 8)}_${i}`,
-            title,
+            title: String(t.title || ""),
             description: String(t.description || ""),
-            category: normalizeCategory(t.category, round.defaultCategory),
+            category: normalizeCategory(t.category, agent.category),
             source: String(t.source || ""),
-            sourceUrl: matchedSource?.uri || undefined,  // Only real URLs from grounding
+            sourceUrl: matchedSource?.uri || undefined,
             heatScore: t.heatScore || 5,
             relevance: String(t.relevance || ""),
             eventDate: t.eventDate ? String(t.eventDate) : undefined,
             warning: t.warning ? String(t.warning) : undefined,
-            section: round.section,
+            section: agent.section,
             fetchedAt: now.toISOString(),
           };
         });
@@ -226,8 +253,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       trends: allTrends,
-      roundsCompleted: results.filter((r) => r.status === "fulfilled").length,
-      roundsTotal: roundsToRun.length,
+      agentsCompleted: results.filter((r) => r.status === "fulfilled").length,
+      agentsTotal: agentsToRun.length,
       errors: errors.length > 0 ? errors : undefined,
     });
   } catch (err) {

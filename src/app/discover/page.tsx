@@ -87,9 +87,9 @@ export default function DiscoverPage() {
     setTrendsDate(date);
   }, [router]);
 
-  async function fetchTrends(sections?: string[]) {
+  async function fetchTrends(categories?: string[]) {
     if (!account) return;
-    setLoading(sections ? sections.join("+") : "all");
+    setLoading(categories ? categories.join("+") : "all");
     setError(null);
 
     try {
@@ -101,14 +101,15 @@ export default function DiscoverPage() {
           platform: account.platform,
           brandName: account.brand.name,
           benchmarkAccounts: account.benchmarkAccounts,
-          sections,
+          categories,
         }),
       });
       const data = await res.json();
       if (data.success && data.trends?.length > 0) {
-        if (sections) {
-          const sectionSet = new Set(sections);
-          const kept = trends.filter((t) => !sectionSet.has(t.section));
+        if (categories) {
+          // Replace only the refreshed categories, keep the rest
+          const catSet = new Set(categories);
+          const kept = trends.filter((t) => !catSet.has(t.category));
           const merged = [...kept, ...data.trends];
           setTrends(merged);
           saveTrends(merged);
@@ -178,7 +179,7 @@ export default function DiscoverPage() {
             if (stale || trends.length === 0) {
               fetchTrends();
             } else {
-              fetchTrends(["brand"]);
+              fetchTrends(["brand_related"]);
             }
           }}
           disabled={isLoading}
