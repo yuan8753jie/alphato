@@ -33,7 +33,7 @@ const SAFETY_FILTER = `
 例外：竞品负面新闻保留，但加上 "warning": "竞品负面"。`;
 
 const JSON_FORMAT = `返回 JSON 数组（只返回 JSON，不要其他文字），每条包含：
-{"title":"标题","description":"2-3句描述","source":"来源网站名","heatScore":1到10,"relevance":"内容创作关联说明"}
+{"title":"标题","description":"2-3句描述","source":"来源网站域名如 people.com.cn","heatScore":1到10,"relevance":"内容创作关联说明"}
 如有预计日期加 "eventDate":"YYYY-MM-DD"，如有竞品负面加 "warning":"竞品负面"。`;
 
 // ============================================================
@@ -220,11 +220,11 @@ export async function POST(req: NextRequest) {
           .map((c) => ({ domain: (c.web?.title || "").toLowerCase(), uri: c.web!.uri! }));
 
         return parseTrends(text).map((t: Record<string, unknown>, i: number) => {
-          // Only match if source name clearly matches a grounding domain
-          // NO fallback — wrong link is worse than no link
-          const sourceParts = String(t.source || "").toLowerCase().split(/[,，、\s]+/).filter(Boolean);
+          // Match source domain to grounding chunk domain
+          // LLM now returns domains (e.g. "sina.com.cn") instead of Chinese names
+          const sourceDomain = String(t.source || "").toLowerCase().trim();
           const matchedSource = realSources.find((s) =>
-            sourceParts.some((part) => s.domain.includes(part) || part.includes(s.domain))
+            sourceDomain && (s.domain.includes(sourceDomain) || sourceDomain.includes(s.domain))
           );
 
           return {
