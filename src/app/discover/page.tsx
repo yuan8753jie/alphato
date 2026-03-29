@@ -26,9 +26,21 @@ const CATEGORY_TO_SECTION: Record<string, TrendSection> = {
   brand_related: "brand",
 };
 
+const PREDICTIVE_CATEGORIES = new Set(["sports_event", "entertainment", "holiday_calendar"]);
+
+function isPredictive(trend: Trend): boolean {
+  if (PREDICTIVE_CATEGORIES.has(trend.category)) return true;
+  if (trend.eventDate) {
+    const eventTime = new Date(trend.eventDate).getTime();
+    return eventTime > Date.now();
+  }
+  return false;
+}
+
 function TrendCard({ trend }: { trend: Trend }) {
   const section = trend.section || CATEGORY_TO_SECTION[trend.category] || "global";
   const colors = SECTION_COLORS[section];
+  const predictive = isPredictive(trend);
 
   return (
     <Card className={`hover:shadow-sm transition-shadow ${trend.warning ? "border-amber-300 bg-amber-50/30" : ""}`}>
@@ -37,11 +49,18 @@ function TrendCard({ trend }: { trend: Trend }) {
           <span className="font-medium text-sm leading-snug">{trend.title}</span>
           <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">{trend.heatScore}/10</span>
         </div>
-        {trend.warning && (
-          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium mb-1">
-            ⚠️ {trend.warning}
-          </span>
-        )}
+        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+          {predictive && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500 text-white font-semibold">
+              预测
+            </span>
+          )}
+          {trend.warning && (
+            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">
+              ⚠️ {trend.warning}
+            </span>
+          )}
+        </div>
         <p className="text-xs text-muted-foreground line-clamp-3">{trend.description}</p>
         <div className="flex items-center gap-1.5 mt-2 flex-wrap">
           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${colors.bg} ${colors.text}`}>
