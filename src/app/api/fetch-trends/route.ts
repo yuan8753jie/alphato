@@ -220,12 +220,12 @@ export async function POST(req: NextRequest) {
           .map((c) => ({ domain: (c.web?.title || "").toLowerCase(), uri: c.web!.uri! }));
 
         return parseTrends(text).map((t: Record<string, unknown>, i: number) => {
-          const source = String(t.source || "").toLowerCase();
+          // Only match if source name clearly matches a grounding domain
+          // NO fallback — wrong link is worse than no link
+          const sourceParts = String(t.source || "").toLowerCase().split(/[,，、\s]+/).filter(Boolean);
           const matchedSource = realSources.find((s) =>
-            source.includes(s.domain) ||
-            s.domain.includes(source.split(/[,，、\s]/)[0]) ||
-            false
-          ) || (realSources.length > 0 ? realSources[i % realSources.length] : undefined);
+            sourceParts.some((part) => s.domain.includes(part) || part.includes(s.domain))
+          );
 
           return {
             id: `trend_${crypto.randomUUID().slice(0, 8)}_${i}`,
