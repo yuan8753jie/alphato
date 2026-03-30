@@ -6,6 +6,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { ClipboardCheck } from "lucide-react";
 import { getAccount, getTopics, saveTopics, getTrends } from "@/lib/store";
 import type { Account, Topic, TopicStatus, TopicType, Trend } from "@/lib/types";
 import { TOPIC_TYPE_LABELS } from "@/lib/types";
@@ -157,9 +159,74 @@ export default function TopicsPage() {
             </Button>
           )}
           {topics.length > 0 && (
-            <Button onClick={reviewTopics} disabled={loading !== null} variant="outline" size="sm">
-              {loading === "reviewing" ? "Persona 评审中..." : "AI Review"}
-            </Button>
+            <>
+              <Button onClick={reviewTopics} disabled={loading !== null} variant="outline" size="sm">
+                {loading === "reviewing" ? "Persona 评审中..." : "AI Review"}
+              </Button>
+              {reviewData?.reviews && (
+                <Sheet>
+                  <SheetTrigger asChild>
+                    <Button variant="ghost" size="sm" className="px-2" title="查看评审详情">
+                      <ClipboardCheck size={16} />
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent className="w-[480px] sm:max-w-[480px] overflow-y-auto">
+                    <SheetHeader>
+                      <SheetTitle>AI 评审详情</SheetTitle>
+                    </SheetHeader>
+                    <div className="mt-4 space-y-6">
+                      {/* Persona team */}
+                      {reviewPersonas.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold mb-2">审稿团（{reviewPersonas.length} 人）</h4>
+                          <div className="space-y-2">
+                            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                            {reviewPersonas.map((p: any, i: number) => (
+                              <div key={i} className="text-xs p-2 rounded border bg-muted/30">
+                                <span className="font-medium">{p.name}</span>
+                                <span className="text-muted-foreground ml-1">{p.age}岁 · {p.gender} · {p.occupation}</span>
+                                <p className="text-muted-foreground mt-0.5">{p.profile}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Per-topic review details */}
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                      {reviewData.reviews.map((review: any, ri: number) => (
+                        <div key={ri} className="border-t pt-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`text-lg font-bold ${
+                              review.averageScore >= 7 ? "text-green-600" :
+                              review.averageScore >= 5 ? "text-amber-600" : "text-red-600"
+                            }`}>{review.averageScore}</span>
+                            <span className="text-sm font-medium">{review.topicTitle}</span>
+                          </div>
+                          <div className="space-y-2">
+                            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                            {review.personaReviews?.map((pr: any, pi: number) => (
+                              <div key={pi} className="text-xs p-2 rounded bg-muted/30">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="font-medium">{pr.personaName}</span>
+                                  <div className="flex gap-2 text-muted-foreground">
+                                    <span>停留{pr.stop}</span>
+                                    <span>完播{pr.watch}</span>
+                                    <span>互动{pr.engage}</span>
+                                    <span>转化{pr.convert}</span>
+                                  </div>
+                                </div>
+                                <p className="text-muted-foreground italic">"{pr.comment}"</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </SheetContent>
+                </Sheet>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -187,27 +254,6 @@ export default function TopicsPage() {
                     <span className="text-[10px] text-muted-foreground shrink-0">{st.relevanceScore}/10</span>
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">{st.reason}</p>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Review personas */}
-      {reviewPersonas.length > 0 && (
-        <Card className="mb-6">
-          <CardContent className="py-4">
-            <h3 className="text-sm font-semibold mb-3">
-              AI 审稿团（{reviewPersonas.length} 人）
-            </h3>
-            <div className="grid grid-cols-3 gap-2">
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {reviewPersonas.map((p: any, i: number) => (
-                <div key={i} className="text-xs p-2 rounded-lg border bg-muted/30">
-                  <div className="font-medium">{p.name}</div>
-                  <div className="text-muted-foreground mt-0.5">{p.age}岁 · {p.gender} · {p.occupation}</div>
-                  <div className="text-muted-foreground mt-0.5 line-clamp-2">{p.profile}</div>
                 </div>
               ))}
             </div>
@@ -244,13 +290,36 @@ export default function TopicsPage() {
             {filtered.map((topic) => (
               <Card key={topic.id} className="hover:shadow-sm transition-shadow">
                 <CardContent className="p-4">
-                  <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${TYPE_COLORS[topic.type] || ""}`}>
-                      {TOPIC_TYPE_LABELS[topic.type] || topic.type}
-                    </span>
-                    <Badge variant={STATUS_VARIANT[topic.status]} className="text-[10px] h-4 px-1.5">
-                      {STATUS_LABEL[topic.status]}
-                    </Badge>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${TYPE_COLORS[topic.type] || ""}`}>
+                        {TOPIC_TYPE_LABELS[topic.type] || topic.type}
+                      </span>
+                      <Badge variant={STATUS_VARIANT[topic.status]} className="text-[10px] h-4 px-1.5">
+                        {STATUS_LABEL[topic.status]}
+                      </Badge>
+                    </div>
+                    {/* Review status badge */}
+                    {(() => {
+                      const review = getTopicReview(topic.title);
+                      if (loading === "reviewing") {
+                        return <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium animate-pulse">评审中</span>;
+                      }
+                      if (review) {
+                        return (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                            review.averageScore >= 7 ? "bg-green-100 text-green-700" :
+                            review.averageScore >= 5 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
+                          }`}>
+                            {review.averageScore}分
+                          </span>
+                        );
+                      }
+                      if (reviewData) {
+                        return <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">未评审</span>;
+                      }
+                      return null;
+                    })()}
                   </div>
                   <Link href={`/topics/${topic.id}`} className="font-semibold text-sm hover:underline block mb-1">
                     {topic.title}
@@ -262,41 +331,6 @@ export default function TopicsPage() {
                       基于：{topic.relatedTrendIds.join("、")}
                     </p>
                   )}
-                  {/* Review scores */}
-                  {(() => {
-                    const review = getTopicReview(topic.title);
-                    if (!review) return null;
-                    return (
-                      <div className="mb-2 p-2 rounded-lg bg-muted/40 border">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <span className={`text-sm font-bold ${
-                            review.averageScore >= 7 ? "text-green-600" :
-                            review.averageScore >= 5 ? "text-amber-600" : "text-red-600"
-                          }`}>
-                            {review.averageScore}/10
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">Persona 综合评分</span>
-                        </div>
-                        <div className="space-y-1">
-                          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                          {review.personaReviews?.slice(0, 3).map((pr: any, pi: number) => (
-                            <div key={pi} className="text-[10px] flex items-start gap-1">
-                              <span className="font-medium shrink-0">{pr.personaName}：</span>
-                              <span className="text-muted-foreground italic">"{pr.comment}"</span>
-                              <span className="shrink-0 text-muted-foreground ml-auto">
-                                {((pr.stop + pr.watch + pr.engage + pr.convert) / 4).toFixed(1)}
-                              </span>
-                            </div>
-                          ))}
-                          {review.personaReviews?.length > 3 && (
-                            <p className="text-[10px] text-muted-foreground">
-                              +{review.personaReviews.length - 3} 位审稿人
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
                   <div className="flex gap-1.5">
                     {(["approved", "hold", "rejected"] as TopicStatus[]).map((s) => (
                       <Button
