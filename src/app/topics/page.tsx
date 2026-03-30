@@ -269,10 +269,51 @@ export default function TopicsPage() {
                          reviewPersonas.length > 0 ? `审稿团就位（${reviewPersonas.length} 人）` : "生成审稿团"}
                       </h3>
                       {reviewStep === "personas" && (
-                        <p className="text-xs text-muted-foreground">AI 正在基于品牌、产品、行业信息构建虚拟目标用户...</p>
+                        <p className="text-xs text-muted-foreground">AI 正在基于以下信息构建虚拟目标用户...</p>
                       )}
                     </div>
                   </div>
+
+                  {/* Show brand context while generating */}
+                  {reviewStep === "personas" && account && (
+                    <div className="ml-11 rounded-xl border bg-muted/30 p-4 space-y-2 animate-pulse">
+                      <div className="text-[11px] space-y-1.5">
+                        <div className="flex gap-2">
+                          <span className="text-muted-foreground shrink-0">品牌</span>
+                          <span className="font-medium">{account.brand.name}</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <span className="text-muted-foreground shrink-0">行业</span>
+                          <span className="font-medium">{account.brand.industry}</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <span className="text-muted-foreground shrink-0">调性</span>
+                          <span className="font-medium line-clamp-2">{account.brand.tone}</span>
+                        </div>
+                        {account.products.length > 0 && (
+                          <div className="flex gap-2">
+                            <span className="text-muted-foreground shrink-0">产品</span>
+                            <span className="font-medium">{account.products.map((p) => p.name).join("、")}</span>
+                          </div>
+                        )}
+                        {account.personas.length > 0 && (
+                          <div className="flex gap-2">
+                            <span className="text-muted-foreground shrink-0">参考受众</span>
+                            <span className="font-medium">{account.personas.map((p) => p.name).join("、")}</span>
+                          </div>
+                        )}
+                        {(account.brandMaterials?.length || 0) > 0 && (
+                          <div className="flex gap-2">
+                            <span className="text-muted-foreground shrink-0">品牌资料</span>
+                            <span className="font-medium">{account.brandMaterials.length} 份</span>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground pt-1 border-t">
+                        AI 正在综合分析以上信息，结合平台用户特征，构建 5~7 个代表性受众画像...
+                      </p>
+                    </div>
+                  )}
 
                   {/* AI reasoning */}
                   {reviewResearch && (
