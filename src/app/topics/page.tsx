@@ -227,7 +227,7 @@ export default function TopicsPage() {
               <Button onClick={reviewTopics} disabled={loading !== null} variant="outline" size="sm">
                 {loading === "reviewing" ? "评审中..." : "AI Review"}
               </Button>
-              {(reviewStep !== "idle" || reviewData) && (
+              {(reviewStep !== "idle" || Object.keys(reviewResults).length > 0) && (
                 <Button variant="ghost" size="sm" className="px-2" title="查看评审过程" onClick={() => setDrawerOpen(true)}>
                   <ClipboardCheck size={16} />
                 </Button>
@@ -242,9 +242,9 @@ export default function TopicsPage() {
                 <SheetHeader>
                   <SheetTitle className="text-lg">AI 评审过程</SheetTitle>
                 </SheetHeader>
-                {reviewStep === "done" && reviewData?.reviews && (
+                {reviewStep === "done" && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    {reviewPersonas.length} 位审稿人 · {reviewData.reviews.length} 条选题 · 评审完成
+                    {reviewPersonas.length} 位审稿人 · {Object.keys(reviewResults).length} 条选题 · 评审完成
                   </p>
                 )}
               </div>
