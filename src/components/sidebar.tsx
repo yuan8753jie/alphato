@@ -13,6 +13,7 @@ import {
   FolderOpen,
   BarChart3,
   Settings,
+  FlaskConical,
   ChevronDown,
 } from "lucide-react";
 import type { Account } from "@/lib/types";
@@ -37,6 +38,7 @@ const NAV_SECTIONS = [
   {
     title: "设置",
     items: [
+      { href: "/eval", label: "效果评判", icon: FlaskConical },
       { href: "/settings", label: "品牌设置", icon: Settings },
     ],
   },

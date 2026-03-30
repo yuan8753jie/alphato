@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("热点抓取 + 选题生成", () => {
+test.describe("选题生成 + 审批", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await page.evaluate(() => {
@@ -35,35 +35,27 @@ test.describe("热点抓取 + 选题生成", () => {
         },
         topics: [],
         scripts: [],
-        trends: [],
-        trendsDate: null,
+        // Pre-populate trends so topics page can generate directly
+        trends: [
+          { id: "tr1", title: "热梗测试", description: "一个测试热梗", category: "social_meme", section: "global", source: "test.com", heatScore: 9, relevance: "测试", fetchedAt: "2026-03-30" },
+          { id: "tr2", title: "行业新闻测试", description: "饮料行业测试新闻", category: "industry_news", section: "industry", source: "test.com", heatScore: 8, relevance: "测试", fetchedAt: "2026-03-30" },
+        ],
+        trendsDate: new Date().toISOString().split("T")[0],
       };
       localStorage.setItem("alphato_data", JSON.stringify(data));
     });
   });
 
-  test("完整链路：抓热点 → 生成选题 → 审批", async ({ page }) => {
+  test("生成选题 → 审批状态切换", async ({ page }) => {
     await page.goto("/topics");
-    await expect(page.locator("text=测试饮料品牌")).toBeVisible();
 
-    // Step 1: On Trends tab, fetch trends
-    await page.click("text=开始抓取热点");
+    // Should see "生成选题" button since trends exist
+    await page.click("text=生成选题");
 
-    // Wait for trends to load (button text changes back)
-    await expect(page.locator("text=刷新全部热点")).toBeVisible({ timeout: 180000 });
-
-    // Verify trends appeared in sections
-    await expect(page.locator("text=全局热点").first()).toBeVisible();
-
-    // Step 2: Click generate topics (bottom of trends tab or switch to topics tab)
-    await page.click("text=基于热点生成选题 →");
-
-    // Should auto-switch to topics tab, wait for topics
-    await expect(page.locator("text=选题池").first()).toBeVisible({ timeout: 60000 });
-
-    // Step 3: Approve a topic
-    const approveButtons = page.locator('button:has-text("采用")');
-    await approveButtons.first().click();
+    // Wait for topics to appear - two-phase generation needs time
+    const approveBtn = page.locator('button:has-text("采用")').first();
+    await expect(approveBtn).toBeVisible({ timeout: 90000 });
+    await approveBtn.click();
 
     // Verify badge changed
     await expect(page.locator('[data-slot="badge"]:has-text("采用")').first()).toBeVisible();

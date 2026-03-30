@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { geminiRequest, extractTextFromResponse } from "@/lib/gemini";
+import { getPlatformName } from "@/lib/brand-context";
 import type { Account, Topic } from "@/lib/types";
 
 export const maxDuration = 300;
-
-function getPlatformName(platform: string): string {
-  return ({
-    douyin: "抖音", tiktok: "TikTok", xiaohongshu: "小红书",
-    instagram: "Instagram", kuaishou: "快手", wechat: "微信视频号",
-    youtube: "YouTube", bilibili: "Bilibili",
-  } as Record<string, string>)[platform] || "抖音";
-}
 
 export async function POST(req: NextRequest) {
   try {

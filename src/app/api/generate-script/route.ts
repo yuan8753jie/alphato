@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { geminiRequest, extractTextFromResponse } from "@/lib/gemini";
+import { buildBrandContext, getPlatformName } from "@/lib/brand-context";
 import type { Account, Topic } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -9,31 +10,8 @@ export async function POST(req: NextRequest) {
       topic: Topic;
     };
 
-    const platformName = {
-      douyin: "抖音", tiktok: "TikTok", xiaohongshu: "小红书",
-      instagram: "Instagram", kuaishou: "快手", wechat: "微信视频号",
-      youtube: "YouTube", bilibili: "Bilibili",
-    }[account.platform] || "抖音";
-
-    const brandContext = [
-      `品牌：${account.brand.name}`,
-      `行业：${account.brand.industry}`,
-      `调性：${account.brand.tone}`,
-      account.brand.rules.length > 0
-        ? `红线规则：${account.brand.rules.join("；")}`
-        : "",
-      account.products.length > 0
-        ? `产品信息：\n${account.products.map((p) => `  - ${p.name}：${p.description}（卖点：${p.sellingPoints.join("、")}）`).join("\n")}`
-        : "",
-      account.personas.length > 0
-        ? `目标受众：\n${account.personas.map((p) => `  - ${p.name}：${p.description}`).join("\n")}`
-        : "",
-      account.brandMaterials?.length > 0
-        ? `品牌资料：\n${account.brandMaterials.map((m) => `  [${m.purpose}] ${m.extractedText.slice(0, 500)}`).join("\n")}`
-        : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const platformName = getPlatformName(account.platform);
+    const brandContext = buildBrandContext(account);
 
     const data = await geminiRequest("gemini-2.5-flash", {
       contents: [
