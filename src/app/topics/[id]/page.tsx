@@ -30,6 +30,10 @@ export default function TopicDetailPage() {
   const [sceneImages, setSceneImages] = useState<Record<number, string>>({});
   const [generatingScene, setGeneratingScene] = useState<number | null>(null);
   const [generatingAll, setGeneratingAll] = useState(false);
+  const [videoTaskId, setVideoTaskId] = useState<string | null>(null);
+  const [videoStatus, setVideoStatus] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoLoading, setVideoLoading] = useState(false);
 
   useEffect(() => {
     const acc = getAccount();
@@ -96,6 +100,68 @@ export default function TopicDetailPage() {
       }
     }
     setGeneratingAll(false);
+  }
+
+  async function generateVideo() {
+    if (!script?.scenes) return;
+    setVideoLoading(true);
+    setVideoStatus("提交中...");
+    setVideoUrl(null);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/generate-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scenes: script.scenes,
+          aspectRatio: "9:16",
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.task?.taskId) {
+        setVideoTaskId(data.task.taskId);
+        setVideoStatus("已提交，等待生成...");
+        // Start polling
+        pollVideoStatus(data.task.taskId);
+      } else {
+        setError(data.error || "视频生成提交失败");
+        setVideoLoading(false);
+      }
+    } catch (err) {
+      setError("请求失败：" + String(err));
+      setVideoLoading(false);
+    }
+  }
+
+  async function pollVideoStatus(taskId: string) {
+    const maxAttempts = 120; // 10 minutes max (5s interval)
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      try {
+        const res = await fetch(`/api/video-status?taskId=${taskId}`);
+        const data = await res.json();
+        if (data.success && data.task) {
+          const { status, videoUrl: url, statusMsg } = data.task;
+          if (status === "succeed" && url) {
+            setVideoUrl(url);
+            setVideoStatus("生成完成");
+            setVideoLoading(false);
+            return;
+          } else if (status === "failed") {
+            setVideoStatus("生成失败：" + (statusMsg || ""));
+            setVideoLoading(false);
+            return;
+          } else {
+            setVideoStatus(status === "processing" ? "生成中..." : "排队中...");
+          }
+        }
+      } catch {
+        // Retry on error
+      }
+    }
+    setVideoStatus("超时，请稍后查询");
+    setVideoLoading(false);
   }
 
   if (!topic || !account) return null;
@@ -278,6 +344,65 @@ export default function TopicDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Video generation */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm">视频 Demo</CardTitle>
+                <Button
+                  onClick={generateVideo}
+                  disabled={videoLoading || !script.scenes?.length}
+                  size="sm"
+                  variant={videoUrl ? "outline" : "default"}
+                >
+                  {videoLoading ? videoStatus : videoUrl ? "重新生成" : "生成视频（可灵）"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {videoUrl ? (
+                <div className="space-y-3">
+                  <video
+                    src={videoUrl}
+                    controls
+                    className="w-full max-w-sm mx-auto rounded-lg shadow-lg"
+                    playsInline
+                  />
+                  <div className="flex items-center justify-center gap-3">
+                    <a
+                      href={videoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+                    >
+                      新窗口打开 ↗
+                    </a>
+                    <a
+                      href={videoUrl}
+                      download
+                      className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+                    >
+                      下载视频
+                    </a>
+                  </div>
+                </div>
+              ) : videoLoading ? (
+                <div className="text-center py-8">
+                  <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground">{videoStatus}</p>
+                  <p className="text-xs text-muted-foreground mt-1">可灵 AI 正在生成视频，通常需要 1~5 分钟</p>
+                  {videoTaskId && (
+                    <p className="text-[10px] text-muted-foreground mt-2 font-mono">Task: {videoTaskId}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  基于分镜表调用可灵 AI 生成短视频 Demo（多镜头，9:16竖版）
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </div>
       ) : (
         <Card>
