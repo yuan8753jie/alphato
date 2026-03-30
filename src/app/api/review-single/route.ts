@@ -29,15 +29,27 @@ export async function POST(req: NextRequest) {
 角度：${topic.angle}
 内容概要：${topic.description}
 
-请以"${persona.name}"的身份，真实地评价这条内容。打分要诚实，不好就给低分。
+请以"${persona.name}"的身份，真实地评价这条内容。先思考，再打分。打分要诚实，不好就给低分。
 
 返回 JSON（只返回 JSON）：
 {
-  "stop": 1到10（刷到标题你会停下来看吗）,
-  "watch": 1到10（你会看完整条视频吗）,
-  "engage": 1到10（你会点赞/评论/收藏/转发吗）,
-  "convert": 1到10（看完后你想了解/购买产品吗）,
-  "comment": "用你自己的口吻说一句真实感受（口语化，像发朋友圈或弹幕）"
+  "stop": {
+    "score": 1到10,
+    "reason": "一句话说明为什么给这个分（如：'标题里有XX让我很好奇' 或 '跟我没关系，会直接划走'）"
+  },
+  "watch": {
+    "score": 1到10,
+    "reason": "一句话说明（如：'内容和我的生活相关，会看完' 或 '中间太像广告了，可能中途退出'）"
+  },
+  "engage": {
+    "score": 1到10,
+    "reason": "一句话说明（如：'会收藏这个教程' 或 '没什么想评论的'）"
+  },
+  "convert": {
+    "score": 1到10,
+    "reason": "一句话说明（如：'看完想试试这个产品' 或 '对我没有购买吸引力'）"
+  },
+  "comment": "用你自己的口吻说一句整体感受（口语化，像发朋友圈或弹幕）"
 }`,
         }],
       }],
@@ -54,13 +66,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "评审解析失败" });
     }
 
-    return NextResponse.json({
-      success: true,
-      review: {
-        personaName: persona.name,
-        ...review,
-      },
-    });
+    // Normalize: support both { stop: 9 } and { stop: { score: 9, reason: "..." } }
+    const normalize = (field: unknown): { score: number; reason: string } => {
+      if (typeof field === "object" && field !== null && "score" in field) {
+        return field as { score: number; reason: string };
+      }
+      return { score: Number(field) || 5, reason: "" };
+    };
+
+    const normalized = {
+      personaName: persona.name,
+      stop: normalize(review.stop),
+      watch: normalize(review.watch),
+      engage: normalize(review.engage),
+      convert: normalize(review.convert),
+      comment: review.comment || "",
+    };
+
+    return NextResponse.json({ success: true, review: normalized });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

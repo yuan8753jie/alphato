@@ -40,6 +40,7 @@ export default function TopicsPage() {
   const [loading, setLoading] = useState<string | null>(null); // null | "selecting" | "generating"
   const [error, setError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<TopicType | "all">("all");
+  const [sortBy, setSortBy] = useState<"default" | "score">("default");
   const [selectedTrends, setSelectedTrends] = useState<SelectedTrend[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [reviewPersonas, setReviewPersonas] = useState<any[]>([]);
@@ -154,7 +155,11 @@ export default function TopicsPage() {
               setReviewResults((prev) => {
                 const existing = prev[topic.id] || { status: "reviewing", personaReviews: [], averageScore: null };
                 const reviews = [...existing.personaReviews, data.review];
-                const allScores = reviews.flatMap((r: { stop: number; watch: number; engage: number; convert: number }) => [r.stop, r.watch, r.engage, r.convert]);
+                // Extract scores - handle both { score, reason } objects and plain numbers
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const getScore = (v: any) => typeof v === "object" && v !== null ? v.score : Number(v) || 0;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const allScores = reviews.flatMap((r: any) => [getScore(r.stop), getScore(r.watch), getScore(r.engage), getScore(r.convert)]);
                 const avg = allScores.length > 0 ? +(allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1) : null;
                 return { ...prev, [topic.id]: { ...existing, personaReviews: reviews, averageScore: avg } };
               });
@@ -194,7 +199,14 @@ export default function TopicsPage() {
 
   if (!account) return null;
 
-  const filtered = filterType === "all" ? topics : topics.filter((t) => t.type === filterType);
+  const filteredTopics = filterType === "all" ? topics : topics.filter((t) => t.type === filterType);
+  const filtered = sortBy === "score"
+    ? [...filteredTopics].sort((a, b) => {
+        const scoreA = reviewResults[a.id]?.averageScore ?? -1;
+        const scoreB = reviewResults[b.id]?.averageScore ?? -1;
+        return scoreB - scoreA;
+      })
+    : filteredTopics;
 
   return (
     <div>
@@ -445,35 +457,53 @@ export default function TopicsPage() {
                               <div className="divide-y">
                                 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                                 {result.personaReviews.map((pr: any, pi: number) => {
-                                  const avg = ((pr.stop + pr.watch + pr.engage + pr.convert) / 4).toFixed(1);
+                                  const getS = (v: any) => typeof v === "object" && v !== null ? v.score : Number(v) || 0;
+                                  const getR = (v: any) => typeof v === "object" && v !== null ? v.reason : "";
+                                  const dims = [
+                                    { key: "stop", label: "停留", score: getS(pr.stop), reason: getR(pr.stop) },
+                                    { key: "watch", label: "完播", score: getS(pr.watch), reason: getR(pr.watch) },
+                                    { key: "engage", label: "互动", score: getS(pr.engage), reason: getR(pr.engage) },
+                                    { key: "convert", label: "转化", score: getS(pr.convert), reason: getR(pr.convert) },
+                                  ];
+                                  const avg = (dims.reduce((s, d) => s + d.score, 0) / 4).toFixed(1);
                                   return (
-                                    <div key={pi} className="px-4 py-2.5 flex items-start gap-3">
-                                      <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0 mt-0.5">
-                                        {pr.personaName?.[0]}
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between">
-                                          <span className="text-xs font-medium">{pr.personaName}</span>
-                                          <div className="flex items-center gap-1.5">
-                                            <div className="flex gap-px">
-                                              {[
-                                                { label: "停", value: pr.stop },
-                                                { label: "播", value: pr.watch },
-                                                { label: "互", value: pr.engage },
-                                                { label: "转", value: pr.convert },
-                                              ].map((d) => (
-                                                <span key={d.label} className={`text-[9px] w-6 h-4 flex items-center justify-center rounded-sm font-mono ${
-                                                  d.value >= 7 ? "bg-green-100 text-green-700" :
-                                                  d.value >= 5 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
-                                                }`}>{d.value}</span>
-                                              ))}
-                                            </div>
-                                            <span className="text-[10px] font-semibold text-muted-foreground">{avg}</span>
-                                          </div>
+                                    <details key={pi} className="group">
+                                      <summary className="px-4 py-2.5 flex items-start gap-3 cursor-pointer hover:bg-muted/30 list-none">
+                                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0 mt-0.5">
+                                          {pr.personaName?.[0]}
                                         </div>
-                                        <p className="text-xs text-muted-foreground mt-0.5 italic leading-relaxed">"{pr.comment}"</p>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-xs font-medium">{pr.personaName}</span>
+                                            <div className="flex items-center gap-1.5">
+                                              <div className="flex gap-px">
+                                                {dims.map((d) => (
+                                                  <span key={d.key} title={d.label} className={`text-[9px] w-6 h-4 flex items-center justify-center rounded-sm font-mono ${
+                                                    d.score >= 7 ? "bg-green-100 text-green-700" :
+                                                    d.score >= 5 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
+                                                  }`}>{d.score}</span>
+                                                ))}
+                                              </div>
+                                              <span className="text-[10px] font-semibold text-muted-foreground">{avg}</span>
+                                              <span className="text-[10px] text-muted-foreground group-open:rotate-90 transition-transform">▶</span>
+                                            </div>
+                                          </div>
+                                          <p className="text-xs text-muted-foreground mt-0.5 italic leading-relaxed">"{pr.comment}"</p>
+                                        </div>
+                                      </summary>
+                                      {/* Collapsed reasoning */}
+                                      <div className="px-4 pb-3 ml-9 space-y-1">
+                                        {dims.map((d) => (
+                                          <div key={d.key} className="flex items-start gap-2 text-[11px]">
+                                            <span className={`shrink-0 w-8 text-center rounded-sm py-px font-medium ${
+                                              d.score >= 7 ? "bg-green-100 text-green-700" :
+                                              d.score >= 5 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
+                                            }`}>{d.label} {d.score}</span>
+                                            <span className="text-muted-foreground">{d.reason || "—"}</span>
+                                          </div>
+                                        ))}
                                       </div>
-                                    </div>
+                                    </details>
                                   );
                                 })}
                               </div>
@@ -543,6 +573,14 @@ export default function TopicsPage() {
                 </button>
               ) : null;
             })}
+            {Object.keys(reviewResults).length > 0 && (
+              <button
+                onClick={() => setSortBy(sortBy === "score" ? "default" : "score")}
+                className={`text-xs px-2.5 py-1 rounded-md transition-colors ml-auto ${sortBy === "score" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+              >
+                {sortBy === "score" ? "按评分排序 ✓" : "按评分排序"}
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
