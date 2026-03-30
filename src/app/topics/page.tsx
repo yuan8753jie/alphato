@@ -198,8 +198,8 @@ export default function TopicsPage() {
 
           {/* Review process drawer */}
           <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
-            <SheetContent className="w-[50vw] sm:max-w-[50vw] overflow-y-auto p-0">
-              <div className="sticky top-0 bg-background/95 backdrop-blur border-b px-6 py-4 z-10">
+            <SheetContent className="overflow-y-auto p-0">
+              <div className="sticky top-0 bg-background/95 backdrop-blur border-b px-6 py-4 z-[1]">
                 <SheetHeader>
                   <SheetTitle className="text-lg">AI 评审过程</SheetTitle>
                 </SheetHeader>
