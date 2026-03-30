@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { geminiRequest, extractTextFromResponse } from "@/lib/gemini";
 import type { Account, Topic } from "@/lib/types";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 function getPlatformName(platform: string): string {
   return ({
@@ -75,7 +75,7 @@ ${topicsList}
 }`,
         }],
       }],
-    }, 90000);
+    }, 180000);
 
     const text = extractTextFromResponse(data);
     let reviewResult: Record<string, unknown> = {};

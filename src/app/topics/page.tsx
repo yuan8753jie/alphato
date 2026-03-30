@@ -115,12 +115,16 @@ export default function TopicsPage() {
       setReviewPersonas(personaData.personas);
       setReviewStep("reviewing");
 
-      // Step 2: Review topics with generated personas
+      // Step 2: Review topics with generated personas (may take a while with many topics)
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 180000);
       const reviewRes = await fetch("/api/review-topics", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ account, topics, personas: personaData.personas }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       const reviewResult = await reviewRes.json();
       if (reviewResult.success) {
         setReviewData(reviewResult.reviews || null);
