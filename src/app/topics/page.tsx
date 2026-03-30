@@ -274,34 +274,30 @@ export default function TopicsPage() {
                     </div>
                   </div>
 
-                  {/* Research basis */}
+                  {/* AI reasoning */}
                   {reviewResearch && (
-                    <div className="ml-11 mb-4 rounded-xl border bg-blue-50/50 p-4 space-y-3">
-                      <h4 className="text-xs font-semibold text-blue-900">研究依据</h4>
-                      {reviewResearch.sources?.length > 0 && (
+                    <div className="ml-11 mb-4 rounded-xl border bg-slate-50 p-4 space-y-3">
+                      <h4 className="text-xs font-semibold">AI 分析思路</h4>
+                      {reviewResearch.dimensions?.length > 0 && (
                         <div>
-                          <p className="text-[10px] font-medium text-blue-800 mb-1">参考来源</p>
+                          <p className="text-[10px] font-medium text-muted-foreground mb-1">考虑维度</p>
                           <div className="flex flex-wrap gap-1">
-                            {reviewResearch.sources.map((s: string, i: number) => (
-                              <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">{s}</span>
+                            {reviewResearch.dimensions.map((d: string, i: number) => (
+                              <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-medium">{d}</span>
                             ))}
                           </div>
                         </div>
                       )}
-                      {reviewResearch.keyFindings?.length > 0 && (
+                      {reviewResearch.logic && (
                         <div>
-                          <p className="text-[10px] font-medium text-blue-800 mb-1">关键发现</p>
-                          <ul className="space-y-0.5">
-                            {reviewResearch.keyFindings.map((f: string, i: number) => (
-                              <li key={i} className="text-[11px] text-blue-900 leading-relaxed">• {f}</li>
-                            ))}
-                          </ul>
+                          <p className="text-[10px] font-medium text-muted-foreground mb-1">构建逻辑</p>
+                          <p className="text-[11px] leading-relaxed">{reviewResearch.logic}</p>
                         </div>
                       )}
-                      {reviewResearch.methodology && (
+                      {reviewResearch.coverage && (
                         <div>
-                          <p className="text-[10px] font-medium text-blue-800 mb-1">构建方法</p>
-                          <p className="text-[11px] text-blue-900 leading-relaxed">{reviewResearch.methodology}</p>
+                          <p className="text-[10px] font-medium text-muted-foreground mb-1">覆盖度</p>
+                          <p className="text-[11px] leading-relaxed">{reviewResearch.coverage}</p>
                         </div>
                       )}
                     </div>

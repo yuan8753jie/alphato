@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { geminiRequest, extractTextFromResponse } from "@/lib/gemini";
 import type { Account } from "@/lib/types";
 
-export const maxDuration = 90;
+export const maxDuration = 60;
 
 function buildBrandContext(account: Account): string {
   return [
@@ -14,6 +14,9 @@ function buildBrandContext(account: Account): string {
       : "",
     account.personas.length > 0
       ? `品牌方定义的目标受众（仅供参考）：\n${account.personas.map((p) => `  - ${p.name}：${p.description}`).join("\n")}`
+      : "",
+    account.brandMaterials?.length > 0
+      ? `品牌资料摘要：\n${account.brandMaterials.map((m) => `  [${m.purpose}] ${m.extractedText.slice(0, 200)}`).join("\n")}`
       : "",
   ].filter(Boolean).join("\n");
 }
@@ -35,51 +38,53 @@ export async function POST(req: NextRequest) {
     const data = await geminiRequest("gemini-2.5-flash", {
       contents: [{
         parts: [{
-          text: `你是一个用户研究专家。请为"${account.brand.name}"（${account.brand.industry}行业）在${pName}平台上的内容，构建一套目标受众画像。
+          text: `你是一个资深的用户研究专家，对消费品市场和社交媒体用户行为有深刻理解。
+
+请为"${account.brand.name}"（${account.brand.industry}行业）在${pName}平台上的内容，构建一套目标受众画像。
 
 ## 品牌信息
 ${brandContext}
 
 ## 任务
 
-请先搜索以下信息作为 Persona 构建的依据：
-1. 搜索"${account.brand.name} 目标消费者"或"${account.brand.name} 用户画像"
-2. 搜索"${account.brand.industry} 消费人群特征"
-3. 搜索"${pName} 用户画像 年龄分布"
+请基于你对以下方面的专业知识，构建 5~7 个有代表性的 Persona：
+- ${account.brand.industry}行业的消费者结构和行为特征
+- ${account.brand.name}品牌的市场定位和目标人群
+- ${pName}平台的用户群体特征和内容消费习惯
+- 不同年龄段、性别、生活阶段的消费差异
 
-然后基于搜索到的真实数据，构建 5~7 个有代表性的 Persona。
+## 要求
+- 先写出你的分析思路（你考虑了哪些维度、为什么选择这些群体）
+- 每个 Persona 之间要有明显差异
+- 既包含核心用户，也包含有增长潜力的边缘用户
+- 品牌方可能提供了参考 Persona，你可以参考但不必照搬
 
 ## 返回格式
 
 返回 JSON（只返回 JSON）：
 {
-  "research": {
-    "sources": ["参考的数据来源1", "参考的数据来源2"],
-    "keyFindings": [
-      "关键发现1：如'该品牌核心消费者年龄集中在18-35岁'",
-      "关键发现2：如'抖音用户中女性占比55%'",
-      "关键发现3"
-    ],
-    "methodology": "一段话说明你是如何基于这些数据构建 Persona 的（如'基于XX数据，我选择了以下6个代表性群体来覆盖核心用户和潜在用户'）"
+  "reasoning": {
+    "dimensions": ["构建 Persona 时考虑的维度1", "维度2", "维度3"],
+    "logic": "2-3句话说明你的整体思路：为什么选择这些群体，它们如何覆盖品牌在${pName}上的核心受众和潜在受众",
+    "coverage": "一句话说明这组 Persona 覆盖了哪些关键人群，遗漏了哪些（如有）"
   },
   "personas": [
     {
       "id": "persona_1",
-      "name": "昵称（如：麻辣小当家）",
-      "age": 年龄或年龄段如"18-25",
+      "name": "昵称",
+      "age": "年龄或年龄段",
       "gender": "男/女/不限",
       "occupation": "职业",
-      "profile": "50字人物简介（写得像真人，不要像标签）",
+      "profile": "50字人物简介（像真人，不像标签）",
       "contentPreference": "在${pName}上喜欢看什么内容",
       "brandAwareness": "对${account.brand.name}品牌的认知和态度",
-      "whyIncluded": "为什么要把这个人纳入审稿团（一句话）"
+      "whyIncluded": "为什么纳入审稿团（这个人代表了什么样的用户群体）"
     }
   ]
 }`,
         }],
       }],
-      tools: [{ googleSearch: {} }],
-    }, 60000);
+    });
 
     const text = extractTextFromResponse(data);
     let result: Record<string, unknown> = {};
@@ -91,7 +96,7 @@ ${brandContext}
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const personas = (result as any).personas;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const research = (result as any).research;
+    const research = (result as any).reasoning;
 
     if (!personas || personas.length === 0) {
       return NextResponse.json({ success: false, error: "Persona 生成失败" });
