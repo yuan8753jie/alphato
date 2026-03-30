@@ -43,9 +43,11 @@ export default function TopicsPage() {
   const [selectedTrends, setSelectedTrends] = useState<SelectedTrend[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [reviewPersonas, setReviewPersonas] = useState<any[]>([]);
+  // reviewResults: { [topicId]: { personaReviews: [...], averageScore, status } }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [reviewData, setReviewData] = useState<any>(null);
+  const [reviewResults, setReviewResults] = useState<Record<string, any>>({});
   const [reviewStep, setReviewStep] = useState<"idle" | "personas" | "reviewing" | "done">("idle");
+  const [reviewingTopicId, setReviewingTopicId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
@@ -96,7 +98,8 @@ export default function TopicsPage() {
     setDrawerOpen(true);
     setReviewStep("personas");
     setReviewPersonas([]);
-    setReviewData(null);
+    setReviewResults({});
+    setReviewingTopicId(null);
 
     try {
       // Step 1: Generate personas
@@ -112,27 +115,61 @@ export default function TopicsPage() {
         setLoading(null);
         return;
       }
-      setReviewPersonas(personaData.personas);
+      const personas = personaData.personas;
+      setReviewPersonas(personas);
       setReviewStep("reviewing");
 
-      // Step 2: Review topics with generated personas (may take a while with many topics)
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 180000);
-      const reviewRes = await fetch("/api/review-topics", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account, topics, personas: personaData.personas }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      const reviewResult = await reviewRes.json();
-      if (reviewResult.success) {
-        setReviewData(reviewResult.reviews || null);
-        setReviewStep("done");
-      } else {
-        setError(reviewResult.error || "评审失败");
-        setReviewStep("idle");
+      // Step 2: Review each topic, one at a time; all personas in parallel per topic
+      for (const topic of topics) {
+        setReviewingTopicId(topic.id);
+
+        // Mark topic as "reviewing"
+        setReviewResults((prev) => ({
+          ...prev,
+          [topic.id]: { status: "reviewing", personaReviews: [], averageScore: null },
+        }));
+
+        // Fire all persona reviews in parallel for this topic
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const personaResults = await Promise.allSettled(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          personas.map(async (persona: any) => {
+            const res = await fetch("/api/review-single", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                persona,
+                topic,
+                brandName: account.brand.name,
+                platform: account.platform,
+              }),
+            });
+            const data = await res.json();
+            if (data.success && data.review) {
+              // Update drawer in real-time as each persona finishes
+              setReviewResults((prev) => {
+                const existing = prev[topic.id] || { status: "reviewing", personaReviews: [], averageScore: null };
+                const reviews = [...existing.personaReviews, data.review];
+                const allScores = reviews.flatMap((r: { stop: number; watch: number; engage: number; convert: number }) => [r.stop, r.watch, r.engage, r.convert]);
+                const avg = allScores.length > 0 ? +(allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1) : null;
+                return { ...prev, [topic.id]: { ...existing, personaReviews: reviews, averageScore: avg } };
+              });
+              return data.review;
+            }
+            return null;
+          })
+        );
+
+        // Mark topic as done
+        const successCount = personaResults.filter((r) => r.status === "fulfilled" && r.value).length;
+        setReviewResults((prev) => ({
+          ...prev,
+          [topic.id]: { ...prev[topic.id], status: successCount > 0 ? "done" : "failed" },
+        }));
       }
+
+      setReviewingTopicId(null);
+      setReviewStep("done");
     } catch (err) {
       setError("请求失败：" + String(err));
       setReviewStep("idle");
@@ -141,10 +178,8 @@ export default function TopicsPage() {
     }
   }
 
-  function getTopicReview(topicTitle: string) {
-    if (!reviewData?.reviews) return null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return reviewData.reviews.find((r: any) => r.topicTitle === topicTitle) || null;
+  function getTopicReview(topicId: string) {
+    return reviewResults[topicId] || null;
   }
 
   function updateTopicStatus(id: string, status: TopicStatus) {
@@ -266,87 +301,108 @@ export default function TopicsPage() {
                   )}
                 </section>
 
-                {/* ===== Step 2: Topic Reviews ===== */}
+                {/* ===== Step 2: Per-topic Reviews ===== */}
                 {(reviewStep === "reviewing" || reviewStep === "done") && (
                   <section>
                     <div className="flex items-center gap-3 mb-4">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white shadow-sm ${
                         reviewStep === "reviewing" ? "bg-blue-500 animate-pulse" :
-                        reviewData?.reviews ? "bg-green-500" : "bg-gray-300"
+                        reviewStep === "done" ? "bg-green-500" : "bg-gray-300"
                       }`}>
-                        {reviewData?.reviews ? "✓" : "2"}
+                        {reviewStep === "done" ? "✓" : "2"}
                       </div>
                       <div>
                         <h3 className="text-sm font-semibold">
                           {reviewStep === "reviewing"
-                            ? `${reviewPersonas.length} 位审稿人正在评审 ${topics.length} 条选题...`
-                            : "评审完成"}
+                            ? `逐条评审中（${Object.values(reviewResults).filter((r) => r.status === "done").length}/${topics.length}）`
+                            : `评审完成（${topics.length} 条）`}
                         </h3>
-                        {reviewStep === "reviewing" && (
-                          <p className="text-xs text-muted-foreground">每位审稿人从自己的视角打分：停留 · 完播 · 互动 · 转化</p>
-                        )}
+                        <p className="text-xs text-muted-foreground">每条选题由 {reviewPersonas.length} 位审稿人独立评审</p>
                       </div>
                     </div>
 
-                    {reviewData?.reviews && (
-                      <div className="space-y-4 ml-11">
-                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                        {reviewData.reviews.map((review: any, ri: number) => (
-                          <div key={ri} className="rounded-xl border overflow-hidden">
+                    <div className="space-y-4 ml-11">
+                      {topics.map((topic) => {
+                        const result = reviewResults[topic.id];
+                        if (!result) {
+                          return (
+                            <div key={topic.id} className="rounded-xl border p-4 opacity-40">
+                              <p className="text-sm text-muted-foreground">{topic.title}</p>
+                              <p className="text-xs text-muted-foreground mt-1">等待评审...</p>
+                            </div>
+                          );
+                        }
+
+                        const isActive = reviewingTopicId === topic.id;
+                        const isDone = result.status === "done";
+                        const avgScore = result.averageScore;
+
+                        return (
+                          <div key={topic.id} className={`rounded-xl border overflow-hidden ${isActive ? "ring-2 ring-blue-400" : ""}`}>
                             {/* Topic header */}
-                            <div className={`px-4 py-2.5 flex items-center gap-3 ${
-                              review.averageScore >= 7 ? "bg-green-50 border-b border-green-100" :
-                              review.averageScore >= 5 ? "bg-amber-50 border-b border-amber-100" :
-                              "bg-red-50 border-b border-red-100"
+                            <div className={`px-4 py-2.5 flex items-center gap-3 border-b ${
+                              !isDone ? "bg-blue-50" :
+                              avgScore >= 7 ? "bg-green-50" :
+                              avgScore >= 5 ? "bg-amber-50" : "bg-red-50"
                             }`}>
-                              <span className={`text-xl font-bold ${
-                                review.averageScore >= 7 ? "text-green-600" :
-                                review.averageScore >= 5 ? "text-amber-600" : "text-red-600"
-                              }`}>{review.averageScore}</span>
+                              {isDone && avgScore !== null ? (
+                                <span className={`text-xl font-bold ${
+                                  avgScore >= 7 ? "text-green-600" :
+                                  avgScore >= 5 ? "text-amber-600" : "text-red-600"
+                                }`}>{avgScore}</span>
+                              ) : (
+                                <span className="text-xl font-bold text-blue-500 animate-pulse">···</span>
+                              )}
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium truncate">{review.topicTitle}</p>
+                                <p className="text-sm font-medium truncate">{topic.title}</p>
+                                <p className="text-[10px] text-muted-foreground">
+                                  {result.personaReviews.length}/{reviewPersonas.length} 位审稿人已完成
+                                </p>
                               </div>
                             </div>
-                            {/* Persona reviews */}
-                            <div className="divide-y">
-                              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                              {review.personaReviews?.map((pr: any, pi: number) => {
-                                const avg = ((pr.stop + pr.watch + pr.engage + pr.convert) / 4).toFixed(1);
-                                return (
-                                  <div key={pi} className="px-4 py-2.5 flex items-start gap-3">
-                                    <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
-                                      {pr.personaName?.[0]}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-xs font-medium">{pr.personaName}</span>
-                                        <div className="flex items-center gap-1.5">
-                                          <div className="flex gap-px">
-                                            {[
-                                              { label: "停", value: pr.stop },
-                                              { label: "播", value: pr.watch },
-                                              { label: "互", value: pr.engage },
-                                              { label: "转", value: pr.convert },
-                                            ].map((d) => (
-                                              <span key={d.label} className={`text-[9px] w-6 h-4 flex items-center justify-center rounded-sm font-mono ${
-                                                d.value >= 7 ? "bg-green-100 text-green-700" :
-                                                d.value >= 5 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
-                                              }`}>{d.value}</span>
-                                            ))}
-                                          </div>
-                                          <span className="text-[10px] font-semibold text-muted-foreground">{avg}</span>
-                                        </div>
+
+                            {/* Individual persona reviews */}
+                            {result.personaReviews.length > 0 && (
+                              <div className="divide-y">
+                                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                {result.personaReviews.map((pr: any, pi: number) => {
+                                  const avg = ((pr.stop + pr.watch + pr.engage + pr.convert) / 4).toFixed(1);
+                                  return (
+                                    <div key={pi} className="px-4 py-2.5 flex items-start gap-3">
+                                      <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0 mt-0.5">
+                                        {pr.personaName?.[0]}
                                       </div>
-                                      <p className="text-xs text-muted-foreground mt-0.5 italic leading-relaxed">"{pr.comment}"</p>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-xs font-medium">{pr.personaName}</span>
+                                          <div className="flex items-center gap-1.5">
+                                            <div className="flex gap-px">
+                                              {[
+                                                { label: "停", value: pr.stop },
+                                                { label: "播", value: pr.watch },
+                                                { label: "互", value: pr.engage },
+                                                { label: "转", value: pr.convert },
+                                              ].map((d) => (
+                                                <span key={d.label} className={`text-[9px] w-6 h-4 flex items-center justify-center rounded-sm font-mono ${
+                                                  d.value >= 7 ? "bg-green-100 text-green-700" :
+                                                  d.value >= 5 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
+                                                }`}>{d.value}</span>
+                                              ))}
+                                            </div>
+                                            <span className="text-[10px] font-semibold text-muted-foreground">{avg}</span>
+                                          </div>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground mt-0.5 italic leading-relaxed">"{pr.comment}"</p>
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    )}
+                        );
+                      })}
+                    </div>
                   </section>
                 )}
               </div>
@@ -425,11 +481,15 @@ export default function TopicsPage() {
                     </div>
                     {/* Review status badge */}
                     {(() => {
-                      const review = getTopicReview(topic.title);
-                      if (loading === "reviewing") {
-                        return <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium animate-pulse">评审中</span>;
+                      const review = getTopicReview(topic.id);
+                      if (review?.status === "reviewing") {
+                        return (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium animate-pulse">
+                            评审中 {review.personaReviews.length}/{reviewPersonas.length}
+                          </span>
+                        );
                       }
-                      if (review) {
+                      if (review?.status === "done" && review.averageScore !== null) {
                         return (
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
                             review.averageScore >= 7 ? "bg-green-100 text-green-700" :
@@ -439,8 +499,8 @@ export default function TopicsPage() {
                           </span>
                         );
                       }
-                      if (reviewData) {
-                        return <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">未评审</span>;
+                      if (reviewStep !== "idle" && !review) {
+                        return <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">等待中</span>;
                       }
                       return null;
                     })()}
