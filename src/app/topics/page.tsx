@@ -48,6 +48,8 @@ export default function TopicsPage() {
   const [reviewResults, setReviewResults] = useState<Record<string, any>>({});
   const [reviewStep, setReviewStep] = useState<"idle" | "personas" | "reviewing" | "done">("idle");
   const [reviewingTopicId, setReviewingTopicId] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [reviewResearch, setReviewResearch] = useState<any>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
@@ -100,6 +102,7 @@ export default function TopicsPage() {
     setReviewPersonas([]);
     setReviewResults({});
     setReviewingTopicId(null);
+    setReviewResearch(null);
 
     try {
       // Step 1: Generate personas
@@ -117,6 +120,7 @@ export default function TopicsPage() {
       }
       const personas = personaData.personas;
       setReviewPersonas(personas);
+      if (personaData.research) setReviewResearch(personaData.research);
       setReviewStep("reviewing");
 
       // Step 2: Review each topic, one at a time; all personas in parallel per topic
@@ -270,6 +274,39 @@ export default function TopicsPage() {
                     </div>
                   </div>
 
+                  {/* Research basis */}
+                  {reviewResearch && (
+                    <div className="ml-11 mb-4 rounded-xl border bg-blue-50/50 p-4 space-y-3">
+                      <h4 className="text-xs font-semibold text-blue-900">研究依据</h4>
+                      {reviewResearch.sources?.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-medium text-blue-800 mb-1">参考来源</p>
+                          <div className="flex flex-wrap gap-1">
+                            {reviewResearch.sources.map((s: string, i: number) => (
+                              <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">{s}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {reviewResearch.keyFindings?.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-medium text-blue-800 mb-1">关键发现</p>
+                          <ul className="space-y-0.5">
+                            {reviewResearch.keyFindings.map((f: string, i: number) => (
+                              <li key={i} className="text-[11px] text-blue-900 leading-relaxed">• {f}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {reviewResearch.methodology && (
+                        <div>
+                          <p className="text-[10px] font-medium text-blue-800 mb-1">构建方法</p>
+                          <p className="text-[11px] text-blue-900 leading-relaxed">{reviewResearch.methodology}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {reviewPersonas.length > 0 && (
                     <div className="grid grid-cols-2 gap-3 ml-11">
                       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
@@ -293,6 +330,11 @@ export default function TopicsPage() {
                           {p.brandAwareness && (
                             <p className="text-[10px] text-muted-foreground">
                               <span className="font-medium text-foreground">品牌认知：</span>{p.brandAwareness}
+                            </p>
+                          )}
+                          {p.whyIncluded && (
+                            <p className="text-[10px] text-blue-600 italic mt-1">
+                              入选原因：{p.whyIncluded}
                             </p>
                           )}
                         </div>

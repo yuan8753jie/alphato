@@ -49,9 +49,9 @@ test.describe("AI Review 评审流程", () => {
     expect(drawerBox!.width).toBeGreaterThan(viewportWidth * 0.4);
     expect(drawerBox!.width).toBeLessThan(viewportWidth * 0.6);
 
-    // Step 1: Persona generation
+    // Step 1: Persona generation (with Google Search, takes longer)
     await expect(page.locator("text=正在分析品牌受众")).toBeVisible();
-    await expect(page.locator("text=审稿团就位")).toBeVisible({ timeout: 30000 });
+    await expect(page.locator("text=审稿团就位")).toBeVisible({ timeout: 60000 });
 
     // Step 2: Wait for review to complete (2 topics × 5-7 personas, may take a while)
     await expect(page.locator("text=评审完成").first()).toBeVisible({ timeout: 180000 });

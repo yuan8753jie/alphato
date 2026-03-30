@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { geminiRequest, extractTextFromResponse } from "@/lib/gemini";
 import type { Account } from "@/lib/types";
 
-export const maxDuration = 60;
+export const maxDuration = 90;
 
 function buildBrandContext(account: Account): string {
   return [
@@ -35,46 +35,69 @@ export async function POST(req: NextRequest) {
     const data = await geminiRequest("gemini-2.5-flash", {
       contents: [{
         parts: [{
-          text: `你是一个用户研究专家。请为"${account.brand.name}"（${account.brand.industry}行业）在${pName}平台上的内容，定义 5~7 个典型目标受众画像。
+          text: `你是一个用户研究专家。请为"${account.brand.name}"（${account.brand.industry}行业）在${pName}平台上的内容，构建一套目标受众画像。
 
 ## 品牌信息
 ${brandContext}
 
-## 要求
-- 这些 Persona 要能代表该品牌在${pName}上的核心受众群体
-- 每个 Persona 要有明显差异（年龄、性别、生活阶段、消费习惯不同）
-- 包含核心用户和潜在用户
-- 品牌方可能提供了参考 Persona，你可以参考但不必照搬
+## 任务
 
-返回 JSON 数组（只返回 JSON）：
-[
-  {
-    "id": "persona_1",
-    "name": "昵称",
-    "age": 年龄,
-    "gender": "男/女",
-    "occupation": "职业",
-    "profile": "50字人物简介",
-    "contentPreference": "内容偏好",
-    "brandAwareness": "对品牌的认知"
-  }
-]`,
+请先搜索以下信息作为 Persona 构建的依据：
+1. 搜索"${account.brand.name} 目标消费者"或"${account.brand.name} 用户画像"
+2. 搜索"${account.brand.industry} 消费人群特征"
+3. 搜索"${pName} 用户画像 年龄分布"
+
+然后基于搜索到的真实数据，构建 5~7 个有代表性的 Persona。
+
+## 返回格式
+
+返回 JSON（只返回 JSON）：
+{
+  "research": {
+    "sources": ["参考的数据来源1", "参考的数据来源2"],
+    "keyFindings": [
+      "关键发现1：如'该品牌核心消费者年龄集中在18-35岁'",
+      "关键发现2：如'抖音用户中女性占比55%'",
+      "关键发现3"
+    ],
+    "methodology": "一段话说明你是如何基于这些数据构建 Persona 的（如'基于XX数据，我选择了以下6个代表性群体来覆盖核心用户和潜在用户'）"
+  },
+  "personas": [
+    {
+      "id": "persona_1",
+      "name": "昵称（如：麻辣小当家）",
+      "age": 年龄或年龄段如"18-25",
+      "gender": "男/女/不限",
+      "occupation": "职业",
+      "profile": "50字人物简介（写得像真人，不要像标签）",
+      "contentPreference": "在${pName}上喜欢看什么内容",
+      "brandAwareness": "对${account.brand.name}品牌的认知和态度",
+      "whyIncluded": "为什么要把这个人纳入审稿团（一句话）"
+    }
+  ]
+}`,
         }],
       }],
-    });
+      tools: [{ googleSearch: {} }],
+    }, 60000);
 
     const text = extractTextFromResponse(data);
-    let personas: Record<string, unknown>[] = [];
+    let result: Record<string, unknown> = {};
     try {
-      const m = text.match(/\[[\s\S]*\]/);
-      if (m) personas = JSON.parse(m[0]);
+      const m = text.match(/\{[\s\S]*\}/);
+      if (m) result = JSON.parse(m[0]);
     } catch { /* ignore */ }
 
-    if (personas.length === 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const personas = (result as any).personas;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const research = (result as any).research;
+
+    if (!personas || personas.length === 0) {
       return NextResponse.json({ success: false, error: "Persona 生成失败" });
     }
 
-    return NextResponse.json({ success: true, personas });
+    return NextResponse.json({ success: true, personas, research });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
