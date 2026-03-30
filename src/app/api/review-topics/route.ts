@@ -78,7 +78,7 @@ ${brandContext}
     let personas: Record<string, unknown>[] = [];
     try {
       const m = phase1Text.match(/\[[\s\S]*\]/);
-      if (m) personas = JSON.parse(m.group());
+      if (m) personas = JSON.parse(m[0]);
     } catch { /* ignore */ }
 
     if (personas.length === 0) {
