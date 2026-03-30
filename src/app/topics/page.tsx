@@ -45,6 +45,8 @@ export default function TopicsPage() {
   const [reviewPersonas, setReviewPersonas] = useState<any[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [reviewData, setReviewData] = useState<any>(null);
+  const [reviewStep, setReviewStep] = useState<"idle" | "personas" | "reviewing" | "done">("idle");
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
     const acc = getAccount();
@@ -91,22 +93,45 @@ export default function TopicsPage() {
     if (!account || topics.length === 0) return;
     setLoading("reviewing");
     setError(null);
+    setDrawerOpen(true);
+    setReviewStep("personas");
+    setReviewPersonas([]);
+    setReviewData(null);
 
     try {
-      const res = await fetch("/api/review-topics", {
+      // Step 1: Generate personas
+      const personaRes = await fetch("/api/generate-personas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account, topics }),
+        body: JSON.stringify({ account }),
       });
-      const data = await res.json();
-      if (data.success) {
-        setReviewPersonas(data.personas || []);
-        setReviewData(data.reviews || null);
+      const personaData = await personaRes.json();
+      if (!personaData.success || !personaData.personas?.length) {
+        setError(personaData.error || "Persona 生成失败");
+        setReviewStep("idle");
+        setLoading(null);
+        return;
+      }
+      setReviewPersonas(personaData.personas);
+      setReviewStep("reviewing");
+
+      // Step 2: Review topics with generated personas
+      const reviewRes = await fetch("/api/review-topics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account, topics, personas: personaData.personas }),
+      });
+      const reviewResult = await reviewRes.json();
+      if (reviewResult.success) {
+        setReviewData(reviewResult.reviews || null);
+        setReviewStep("done");
       } else {
-        setError(data.error || "Review 失败");
+        setError(reviewResult.error || "评审失败");
+        setReviewStep("idle");
       }
     } catch (err) {
       setError("请求失败：" + String(err));
+      setReviewStep("idle");
     } finally {
       setLoading(null);
     }
@@ -161,73 +186,94 @@ export default function TopicsPage() {
           {topics.length > 0 && (
             <>
               <Button onClick={reviewTopics} disabled={loading !== null} variant="outline" size="sm">
-                {loading === "reviewing" ? "Persona 评审中..." : "AI Review"}
+                {loading === "reviewing" ? "评审中..." : "AI Review"}
               </Button>
-              {reviewData?.reviews && (
-                <Sheet>
-                  <SheetTrigger asChild>
-                    <Button variant="ghost" size="sm" className="px-2" title="查看评审详情">
-                      <ClipboardCheck size={16} />
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent className="w-[480px] sm:max-w-[480px] overflow-y-auto">
-                    <SheetHeader>
-                      <SheetTitle>AI 评审详情</SheetTitle>
-                    </SheetHeader>
-                    <div className="mt-4 space-y-6">
-                      {/* Persona team */}
-                      {reviewPersonas.length > 0 && (
-                        <div>
-                          <h4 className="text-sm font-semibold mb-2">审稿团（{reviewPersonas.length} 人）</h4>
-                          <div className="space-y-2">
-                            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                            {reviewPersonas.map((p: any, i: number) => (
-                              <div key={i} className="text-xs p-2 rounded border bg-muted/30">
-                                <span className="font-medium">{p.name}</span>
-                                <span className="text-muted-foreground ml-1">{p.age}岁 · {p.gender} · {p.occupation}</span>
-                                <p className="text-muted-foreground mt-0.5">{p.profile}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+              {(reviewStep !== "idle" || reviewData) && (
+                <Button variant="ghost" size="sm" className="px-2" title="查看评审过程" onClick={() => setDrawerOpen(true)}>
+                  <ClipboardCheck size={16} />
+                </Button>
+              )}
+            </>
+          )}
 
-                      {/* Per-topic review details */}
+          {/* Review drawer */}
+          <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+            <SheetContent className="w-[480px] sm:max-w-[480px] overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>AI 评审过程</SheetTitle>
+              </SheetHeader>
+              <div className="mt-4 space-y-6">
+                {/* Step 1: Persona generation */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${
+                      reviewStep === "personas" ? "bg-blue-500 animate-pulse" :
+                      reviewPersonas.length > 0 ? "bg-green-500" : "bg-muted"
+                    }`}>1</span>
+                    <h4 className="text-sm font-semibold">
+                      {reviewStep === "personas" ? "正在生成审稿团..." : `审稿团（${reviewPersonas.length} 人）`}
+                    </h4>
+                  </div>
+                  {reviewPersonas.length > 0 && (
+                    <div className="space-y-2 ml-7">
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                      {reviewPersonas.map((p: any, i: number) => (
+                        <div key={i} className="text-xs p-2 rounded border bg-muted/30">
+                          <span className="font-medium">{p.name}</span>
+                          <span className="text-muted-foreground ml-1">{p.age}岁 · {p.gender} · {p.occupation}</span>
+                          <p className="text-muted-foreground mt-0.5">{p.profile}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Step 2: Topic reviews */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${
+                      reviewStep === "reviewing" ? "bg-blue-500 animate-pulse" :
+                      reviewData?.reviews ? "bg-green-500" : "bg-muted"
+                    }`}>2</span>
+                    <h4 className="text-sm font-semibold">
+                      {reviewStep === "reviewing" ? `正在评审 ${topics.length} 条选题...` :
+                       reviewData?.reviews ? "评审完成" : "等待评审"}
+                    </h4>
+                  </div>
+                  {reviewData?.reviews && (
+                    <div className="space-y-4 ml-7">
                       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                       {reviewData.reviews.map((review: any, ri: number) => (
-                        <div key={ri} className="border-t pt-4">
+                        <div key={ri} className="border rounded-lg p-3">
                           <div className="flex items-center gap-2 mb-2">
-                            <span className={`text-lg font-bold ${
+                            <span className={`text-sm font-bold ${
                               review.averageScore >= 7 ? "text-green-600" :
                               review.averageScore >= 5 ? "text-amber-600" : "text-red-600"
-                            }`}>{review.averageScore}</span>
-                            <span className="text-sm font-medium">{review.topicTitle}</span>
+                            }`}>{review.averageScore}分</span>
+                            <span className="text-xs font-medium flex-1 truncate">{review.topicTitle}</span>
                           </div>
-                          <div className="space-y-2">
+                          <div className="space-y-1.5">
                             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                             {review.personaReviews?.map((pr: any, pi: number) => (
-                              <div key={pi} className="text-xs p-2 rounded bg-muted/30">
-                                <div className="flex items-center justify-between mb-1">
+                              <div key={pi} className="text-[11px] p-1.5 rounded bg-muted/30">
+                                <div className="flex items-center justify-between">
                                   <span className="font-medium">{pr.personaName}</span>
-                                  <div className="flex gap-2 text-muted-foreground">
-                                    <span>停留{pr.stop}</span>
-                                    <span>完播{pr.watch}</span>
-                                    <span>互动{pr.engage}</span>
-                                    <span>转化{pr.convert}</span>
-                                  </div>
+                                  <span className="text-muted-foreground text-[10px]">
+                                    停{pr.stop} 播{pr.watch} 互{pr.engage} 转{pr.convert}
+                                  </span>
                                 </div>
-                                <p className="text-muted-foreground italic">"{pr.comment}"</p>
+                                <p className="text-muted-foreground italic mt-0.5">"{pr.comment}"</p>
                               </div>
                             ))}
                           </div>
                         </div>
                       ))}
                     </div>
-                  </SheetContent>
-                </Sheet>
-              )}
-            </>
-          )}
+                  )}
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
 
