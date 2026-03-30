@@ -196,81 +196,155 @@ export default function TopicsPage() {
             </>
           )}
 
-          {/* Review drawer */}
+          {/* Review process drawer */}
           <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
-            <SheetContent className="w-[480px] sm:max-w-[480px] overflow-y-auto">
-              <SheetHeader>
-                <SheetTitle>AI 评审过程</SheetTitle>
-              </SheetHeader>
-              <div className="mt-4 space-y-6">
-                {/* Step 1: Persona generation */}
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${
+            <SheetContent className="w-[50vw] sm:max-w-[50vw] overflow-y-auto p-0">
+              <div className="sticky top-0 bg-background/95 backdrop-blur border-b px-6 py-4 z-10">
+                <SheetHeader>
+                  <SheetTitle className="text-lg">AI 评审过程</SheetTitle>
+                </SheetHeader>
+                {reviewStep === "done" && reviewData?.reviews && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {reviewPersonas.length} 位审稿人 · {reviewData.reviews.length} 条选题 · 评审完成
+                  </p>
+                )}
+              </div>
+
+              <div className="px-6 py-5 space-y-8">
+                {/* ===== Step 1: Persona Generation ===== */}
+                <section>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white shadow-sm ${
                       reviewStep === "personas" ? "bg-blue-500 animate-pulse" :
-                      reviewPersonas.length > 0 ? "bg-green-500" : "bg-muted"
-                    }`}>1</span>
-                    <h4 className="text-sm font-semibold">
-                      {reviewStep === "personas" ? "正在生成审稿团..." : `审稿团（${reviewPersonas.length} 人）`}
-                    </h4>
+                      reviewPersonas.length > 0 ? "bg-green-500" : "bg-gray-300"
+                    }`}>
+                      {reviewPersonas.length > 0 ? "✓" : "1"}
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold">
+                        {reviewStep === "personas" ? "正在分析品牌受众，生成审稿团..." :
+                         reviewPersonas.length > 0 ? `审稿团就位（${reviewPersonas.length} 人）` : "生成审稿团"}
+                      </h3>
+                      {reviewStep === "personas" && (
+                        <p className="text-xs text-muted-foreground">AI 正在基于品牌、产品、行业信息构建虚拟目标用户...</p>
+                      )}
+                    </div>
                   </div>
+
                   {reviewPersonas.length > 0 && (
-                    <div className="space-y-2 ml-7">
+                    <div className="grid grid-cols-2 gap-3 ml-11">
                       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                       {reviewPersonas.map((p: any, i: number) => (
-                        <div key={i} className="text-xs p-2 rounded border bg-muted/30">
-                          <span className="font-medium">{p.name}</span>
-                          <span className="text-muted-foreground ml-1">{p.age}岁 · {p.gender} · {p.occupation}</span>
-                          <p className="text-muted-foreground mt-0.5">{p.profile}</p>
+                        <div key={i} className="rounded-xl border bg-gradient-to-br from-muted/30 to-muted/10 p-3 space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
+                              {p.name?.[0]}
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold">{p.name}</p>
+                              <p className="text-[11px] text-muted-foreground">{p.age}岁 · {p.gender} · {p.occupation}</p>
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground leading-relaxed">{p.profile}</p>
+                          {p.contentPreference && (
+                            <p className="text-[10px] text-muted-foreground">
+                              <span className="font-medium text-foreground">偏好：</span>{p.contentPreference}
+                            </p>
+                          )}
+                          {p.brandAwareness && (
+                            <p className="text-[10px] text-muted-foreground">
+                              <span className="font-medium text-foreground">品牌认知：</span>{p.brandAwareness}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>
                   )}
-                </div>
+                </section>
 
-                {/* Step 2: Topic reviews */}
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${
-                      reviewStep === "reviewing" ? "bg-blue-500 animate-pulse" :
-                      reviewData?.reviews ? "bg-green-500" : "bg-muted"
-                    }`}>2</span>
-                    <h4 className="text-sm font-semibold">
-                      {reviewStep === "reviewing" ? `正在评审 ${topics.length} 条选题...` :
-                       reviewData?.reviews ? "评审完成" : "等待评审"}
-                    </h4>
-                  </div>
-                  {reviewData?.reviews && (
-                    <div className="space-y-4 ml-7">
-                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                      {reviewData.reviews.map((review: any, ri: number) => (
-                        <div key={ri} className="border rounded-lg p-3">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className={`text-sm font-bold ${
-                              review.averageScore >= 7 ? "text-green-600" :
-                              review.averageScore >= 5 ? "text-amber-600" : "text-red-600"
-                            }`}>{review.averageScore}分</span>
-                            <span className="text-xs font-medium flex-1 truncate">{review.topicTitle}</span>
-                          </div>
-                          <div className="space-y-1.5">
-                            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                            {review.personaReviews?.map((pr: any, pi: number) => (
-                              <div key={pi} className="text-[11px] p-1.5 rounded bg-muted/30">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-medium">{pr.personaName}</span>
-                                  <span className="text-muted-foreground text-[10px]">
-                                    停{pr.stop} 播{pr.watch} 互{pr.engage} 转{pr.convert}
-                                  </span>
-                                </div>
-                                <p className="text-muted-foreground italic mt-0.5">"{pr.comment}"</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
+                {/* ===== Step 2: Topic Reviews ===== */}
+                {(reviewStep === "reviewing" || reviewStep === "done") && (
+                  <section>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white shadow-sm ${
+                        reviewStep === "reviewing" ? "bg-blue-500 animate-pulse" :
+                        reviewData?.reviews ? "bg-green-500" : "bg-gray-300"
+                      }`}>
+                        {reviewData?.reviews ? "✓" : "2"}
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold">
+                          {reviewStep === "reviewing"
+                            ? `${reviewPersonas.length} 位审稿人正在评审 ${topics.length} 条选题...`
+                            : "评审完成"}
+                        </h3>
+                        {reviewStep === "reviewing" && (
+                          <p className="text-xs text-muted-foreground">每位审稿人从自己的视角打分：停留 · 完播 · 互动 · 转化</p>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
+
+                    {reviewData?.reviews && (
+                      <div className="space-y-4 ml-11">
+                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                        {reviewData.reviews.map((review: any, ri: number) => (
+                          <div key={ri} className="rounded-xl border overflow-hidden">
+                            {/* Topic header */}
+                            <div className={`px-4 py-2.5 flex items-center gap-3 ${
+                              review.averageScore >= 7 ? "bg-green-50 border-b border-green-100" :
+                              review.averageScore >= 5 ? "bg-amber-50 border-b border-amber-100" :
+                              "bg-red-50 border-b border-red-100"
+                            }`}>
+                              <span className={`text-xl font-bold ${
+                                review.averageScore >= 7 ? "text-green-600" :
+                                review.averageScore >= 5 ? "text-amber-600" : "text-red-600"
+                              }`}>{review.averageScore}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{review.topicTitle}</p>
+                              </div>
+                            </div>
+                            {/* Persona reviews */}
+                            <div className="divide-y">
+                              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                              {review.personaReviews?.map((pr: any, pi: number) => {
+                                const avg = ((pr.stop + pr.watch + pr.engage + pr.convert) / 4).toFixed(1);
+                                return (
+                                  <div key={pi} className="px-4 py-2.5 flex items-start gap-3">
+                                    <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                                      {pr.personaName?.[0]}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-xs font-medium">{pr.personaName}</span>
+                                        <div className="flex items-center gap-1.5">
+                                          <div className="flex gap-px">
+                                            {[
+                                              { label: "停", value: pr.stop },
+                                              { label: "播", value: pr.watch },
+                                              { label: "互", value: pr.engage },
+                                              { label: "转", value: pr.convert },
+                                            ].map((d) => (
+                                              <span key={d.label} className={`text-[9px] w-6 h-4 flex items-center justify-center rounded-sm font-mono ${
+                                                d.value >= 7 ? "bg-green-100 text-green-700" :
+                                                d.value >= 5 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
+                                              }`}>{d.value}</span>
+                                            ))}
+                                          </div>
+                                          <span className="text-[10px] font-semibold text-muted-foreground">{avg}</span>
+                                        </div>
+                                      </div>
+                                      <p className="text-xs text-muted-foreground mt-0.5 italic leading-relaxed">"{pr.comment}"</p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
               </div>
             </SheetContent>
           </Sheet>
