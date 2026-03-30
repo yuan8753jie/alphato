@@ -27,6 +27,9 @@ export default function TopicDetailPage() {
   const [script, setScript] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sceneImages, setSceneImages] = useState<Record<number, string>>({});
+  const [generatingScene, setGeneratingScene] = useState<number | null>(null);
+  const [generatingAll, setGeneratingAll] = useState(false);
 
   useEffect(() => {
     const acc = getAccount();
@@ -66,6 +69,33 @@ export default function TopicDetailPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function generateSceneImage(sceneNumber: number, visual: string) {
+    setGeneratingScene(sceneNumber);
+    try {
+      const res = await fetch("/api/generate-storyboard-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visual, sceneNumber, aspectRatio: "9:16" }),
+      });
+      const data = await res.json();
+      if (data.success && data.image?.dataUrl) {
+        setSceneImages((prev) => ({ ...prev, [sceneNumber]: data.image.dataUrl }));
+      }
+    } catch { /* ignore */ }
+    finally { setGeneratingScene(null); }
+  }
+
+  async function generateAllImages() {
+    if (!script?.scenes) return;
+    setGeneratingAll(true);
+    for (const scene of script.scenes) {
+      if (!sceneImages[scene.sceneNumber]) {
+        await generateSceneImage(scene.sceneNumber, scene.visual);
+      }
+    }
+    setGeneratingAll(false);
   }
 
   if (!topic || !account) return null;
@@ -140,49 +170,90 @@ export default function TopicDetailPage() {
 
           {/* Storyboard */}
           <div>
-            <h2 className="text-base font-bold mb-3">分镜表</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-bold">分镜表</h2>
+              {script.scenes?.length > 0 && (
+                <Button
+                  onClick={generateAllImages}
+                  disabled={generatingAll || generatingScene !== null}
+                  variant="outline"
+                  size="sm"
+                >
+                  {generatingAll ? `生成中（${Object.keys(sceneImages).length}/${script.scenes.length}）...` : "生成全部分镜图"}
+                </Button>
+              )}
+            </div>
             <div className="space-y-3">
-              {script.scenes?.map((scene: Record<string, string | number>, i: number) => (
-                <Card key={i} className="overflow-hidden">
-                  <div className="flex">
-                    {/* Scene number + duration */}
-                    <div className="w-16 bg-muted flex flex-col items-center justify-center py-3 shrink-0">
-                      <span className="text-lg font-bold">P{scene.sceneNumber}</span>
-                      <span className="text-[10px] text-muted-foreground">{scene.duration}</span>
+              {script.scenes?.map((scene: Record<string, string | number>, i: number) => {
+                const sn = Number(scene.sceneNumber);
+                const img = sceneImages[sn];
+                const isGenerating = generatingScene === sn;
+
+                return (
+                  <Card key={i} className="overflow-hidden">
+                    <div className="flex">
+                      {/* Left: scene image or number */}
+                      <div className="w-28 bg-muted flex flex-col items-center justify-center shrink-0 relative">
+                        {img ? (
+                          <img src={img} alt={`P${sn}`} className="w-full h-full object-cover" />
+                        ) : isGenerating ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                            <span className="text-[10px] text-muted-foreground">生成中</span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-lg font-bold">P{sn}</span>
+                            <span className="text-[10px] text-muted-foreground">{scene.duration}</span>
+                            <button
+                              onClick={() => generateSceneImage(sn, String(scene.visual))}
+                              disabled={generatingScene !== null}
+                              className="mt-1 text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                            >
+                              生成图
+                            </button>
+                          </div>
+                        )}
+                        {img && (
+                          <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded">
+                            P{sn} · {scene.duration}
+                          </div>
+                        )}
+                      </div>
+
+                      <CardContent className="flex-1 py-3 px-4 space-y-2">
+                        {/* Visual / Kling prompt */}
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[10px] font-semibold text-muted-foreground">画面 / 视频生成提示词</span>
+                            <Badge variant="outline" className="text-[9px] h-4">Kling Prompt</Badge>
+                          </div>
+                          <div className="rounded-lg bg-slate-950 text-slate-200 p-3">
+                            <p className="text-xs leading-relaxed font-mono whitespace-pre-wrap">{scene.visual}</p>
+                          </div>
+                        </div>
+
+                        {/* Audio + Text row */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <p className="text-[10px] font-semibold text-muted-foreground mb-1">声音</p>
+                            <p className="text-xs text-muted-foreground">{scene.audio}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-semibold text-muted-foreground mb-1">字幕 / 口播</p>
+                            <p className="text-xs font-medium">{scene.text}</p>
+                          </div>
+                        </div>
+
+                        {/* Transition */}
+                        {scene.transition && (
+                          <p className="text-[10px] text-muted-foreground">转场：{scene.transition}</p>
+                        )}
+                      </CardContent>
                     </div>
-
-                    <CardContent className="flex-1 py-3 px-4 space-y-2">
-                      {/* Visual / Kling prompt */}
-                      <div>
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <span className="text-[10px] font-semibold text-muted-foreground">画面 / 视频生成提示词</span>
-                          <Badge variant="outline" className="text-[9px] h-4">Kling Prompt</Badge>
-                        </div>
-                        <div className="rounded-lg bg-slate-950 text-slate-200 p-3">
-                          <p className="text-xs leading-relaxed font-mono whitespace-pre-wrap">{scene.visual}</p>
-                        </div>
-                      </div>
-
-                      {/* Audio + Text row */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <p className="text-[10px] font-semibold text-muted-foreground mb-1">声音</p>
-                          <p className="text-xs text-muted-foreground">{scene.audio}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-semibold text-muted-foreground mb-1">字幕 / 口播</p>
-                          <p className="text-xs font-medium">{scene.text}</p>
-                        </div>
-                      </div>
-
-                      {/* Transition */}
-                      {scene.transition && (
-                        <p className="text-[10px] text-muted-foreground">转场：{scene.transition}</p>
-                      )}
-                    </CardContent>
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                );
+              })}
             </div>
           </div>
 
