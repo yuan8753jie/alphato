@@ -47,18 +47,17 @@ export async function POST(req: NextRequest) {
         const subjectRef = elementId ? `<<<element_${elementId}>>>` : "";
         let prompt: string;
         if (voiceover) {
-          prompt = `A Chinese young person says: "${voiceover}". ${subjectRef} ${visual}`;
+          prompt = `${subjectRef}画面中的人说："${voiceover}"。${visual}`;
         } else {
-          prompt = `${subjectRef} ${visual}`;
+          prompt = `${subjectRef}${visual}`;
         }
 
-        // Kling limit: 512 chars per scene prompt — truncate visual if needed, keep voiceover intact
+        // Kling limit: 512 chars per scene prompt
         if (prompt.length > 510) {
           if (voiceover) {
-            // Keep the voiceover part, truncate visual
-            const voiceoverPart = `A Chinese young person says: "${voiceover}". `;
+            const voiceoverPart = `${subjectRef}画面中的人说："${voiceover}"。`;
             const remainingChars = 510 - voiceoverPart.length;
-            prompt = voiceoverPart + visual.substring(0, Math.max(50, remainingChars));
+            prompt = voiceoverPart + visual.substring(0, Math.max(30, remainingChars));
           } else {
             prompt = visual.substring(0, 510);
           }

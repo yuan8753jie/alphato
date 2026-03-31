@@ -348,12 +348,6 @@ export default function TopicDetailPage() {
           <div>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-base font-bold">分镜表</h2>
-              <button
-                onClick={() => setShowEnglish(!showEnglish)}
-                className="text-xs px-2.5 py-1 rounded-md bg-muted hover:bg-muted/80 transition-colors"
-              >
-                {showEnglish ? "显示中文" : "显示英文原文"}
-              </button>
             </div>
 
             <div className="rounded-lg border overflow-x-auto">
@@ -374,10 +368,8 @@ export default function TopicDetailPage() {
                     const sn = Number(scene.sceneNumber);
                     const imgKey = `${activeTab}_${sn}`;
                     const img = sceneImages[imgKey];
-                    const visualEn = String(scene.visual || "");
-                    const visualCn = String(scene.visualCn || "");
-                    const audioEn = String(scene.audio || "");
-                    const audioCn = String(scene.audioCn || "");
+                    const visual = String(scene.visual || "");
+                    const audio = String(scene.audio || "");
 
                     return (
                       <tr key={i} className="hover:bg-muted/20 align-top">
@@ -389,14 +381,10 @@ export default function TopicDetailPage() {
                           </span>
                         </td>
                         <td className="px-3 py-2.5">
-                          <p className="text-[11px] leading-relaxed whitespace-pre-wrap">
-                            {showEnglish ? visualEn : (visualCn || visualEn)}
-                          </p>
+                          <p className="text-[11px] leading-relaxed whitespace-pre-wrap">{visual}</p>
                         </td>
                         <td className="px-3 py-2.5 text-muted-foreground">
-                          <p className="text-[11px] leading-relaxed">
-                            {showEnglish ? audioEn : (audioCn || audioEn)}
-                          </p>
+                          <p className="text-[11px] leading-relaxed">{audio}</p>
                         </td>
                         <td className="px-3 py-2.5 font-medium">{scene.text || <span className="text-muted-foreground italic">无</span>}</td>
                         <td className="px-3 py-2.5 text-center">
@@ -404,7 +392,7 @@ export default function TopicDetailPage() {
                             <img src={img} alt={`P${sn}`} className="w-10 h-14 object-cover rounded mx-auto" />
                           ) : (
                             <button
-                              onClick={() => generateSceneImage(imgKey, visualEn)}
+                              onClick={() => generateSceneImage(imgKey, visual)}
                               disabled={generatingScene !== null}
                               className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
                             >
@@ -426,11 +414,11 @@ export default function TopicDetailPage() {
               </summary>
               <div className="mt-2 rounded-lg bg-slate-950 text-slate-200 p-4 space-y-3">
                 {activeScript.scenes?.map((scene: Record<string, string | number>, i: number) => {
-                  const visual = String(scene.visual || "");
+                  const sceneVisual = String(scene.visual || "");
                   const voiceover = String(scene.text || "").trim();
-                  let klingPrompt = visual;
+                  let klingPrompt = sceneVisual;
                   if (voiceover) {
-                    klingPrompt = `A Chinese young person says: "${voiceover}". ${visual}`;
+                    klingPrompt = `画面中的人说："${voiceover}"。${sceneVisual}`;
                   }
                   if (klingPrompt.length > 510) klingPrompt = klingPrompt.substring(0, 510) + "...";
 

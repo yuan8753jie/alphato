@@ -72,12 +72,10 @@ ${concepts}
 
 ## 分镜写法
 每个 shot 需要：
-- shot_type: 镜头类型（如 EXTREME CLOSE-UP, WIDE SHOT, LOW ANGLE, TRACKING SHOT, FAST MONTAGE, POV SHOT 等）
-- visual: 英文画面描述（电影级，含人物外貌、表情、动作、光线、氛围）
-- visualCn: 上面的中文翻译
+- shot_type: 镜头类型（如：极致特写、全景、低角度、跟拍、快速蒙太奇、POV主观镜头 等）
+- visual: 中文画面描述（电影级，含人物外貌、表情、动作、镜头运动、光线、氛围，这个字段会直接发给可灵AI生成视频）
 - voice_over: 中文口播内容（无口播版留空字符串）
-- sfx: 音效/音乐描述（英文）
-- sfxCn: 音效中文翻译
+- sfx: 中文音效/音乐描述
 - duration: 秒数（纯数字）
 
 ## 4 个变体的分类
@@ -101,12 +99,10 @@ ${concepts}
   "shots": [
     {
       "shot_id": 1,
-      "shot_type": "EXTREME CLOSE-UP",
-      "visual": "English cinematic description...",
-      "visualCn": "中文画面描述",
-      "voice_over": "中文口播（无口播留空）",
-      "sfx": "English sound/music description",
-      "sfxCn": "中文音效描述",
+      "shot_type": "极致特写",
+      "visual": "中文画面描述（电影级，详细写人物、动作、镜头、光线、氛围，直接给可灵AI用）",
+      "voice_over": "中文口播（无口播留空字符串）",
+      "sfx": "中文音效/音乐描述",
       "duration": "3"
     }
   ],
@@ -171,9 +167,7 @@ export async function POST(req: NextRequest) {
             sceneNumber: s.shot_id,
             shotType: s.shot_type,
             visual: s.visual,
-            visualCn: s.visualCn,
             audio: s.sfx,
-            audioCn: s.sfxCn,
             text: s.voice_over || "",
             duration: s.duration,
             transition: "",
