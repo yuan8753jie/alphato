@@ -32,6 +32,7 @@ export default function SetupPage() {
   const [saved, setSaved] = useState(false);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [uploadPurpose, setUploadPurpose] = useState<MaterialPurpose>("brand_guide");
+  const [searchingProductImage, setSearchingProductImage] = useState<number | null>(null);
 
   useEffect(() => {
     const existing = getAccount();
@@ -497,6 +498,28 @@ export default function SetupPage() {
                             上传图片
                           </span>
                         </label>
+                        <button
+                          className="text-xs px-2.5 py-1.5 rounded border hover:bg-muted transition-colors disabled:opacity-50 shrink-0"
+                          disabled={!product.name || searchingProductImage === i}
+                          onClick={async () => {
+                            if (!product.name) return;
+                            setSearchingProductImage(i);
+                            try {
+                              const res = await fetch("/api/search-product-images", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ productName: product.name, brandName: account.brand.name }),
+                              });
+                              const data = await res.json();
+                              if (data.success && data.images?.length > 0) {
+                                updateProduct(i, "imagePaths", [...product.imagePaths, ...data.images]);
+                              }
+                            } catch { /* ignore */ }
+                            finally { setSearchingProductImage(null); }
+                          }}
+                        >
+                          {searchingProductImage === i ? "生成中..." : "AI 生成产品图"}
+                        </button>
                       </div>
                       <Button
                         variant="ghost"
