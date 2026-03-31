@@ -521,7 +521,7 @@ export default function SetupPage() {
                                 urls.push(...data.groundingUrls.map((g: { url: string }) => g.url));
                               }
                               if (urls.length > 0) {
-                                updateProduct(i, "imagePaths", [...product.imagePaths, ...urls.slice(0, 5)]);
+                                updateProduct(i, "imagePaths", [...product.imagePaths, ...urls.slice(0, 10)]);
                               }
                             } catch { /* ignore */ }
                             finally { setSearchingProductImage(null); }
