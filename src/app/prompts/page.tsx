@@ -252,7 +252,7 @@ summary 字段务必尽可能完整地提取图片中的文字内容。`,
     stage: "创作",
     stageColor: "bg-green-100 text-green-700",
     icon: Clapperboard,
-    purpose: "基于选题生成完整的短视频脚本：分镜表、口播逐字稿、导演备注",
+    purpose: "15秒微电影式脚本：有创意公式（反转/悬念/递进/对比/沉浸）、可灵视频提示词、弹幕风台词",
     model: "gemini-2.5-flash",
     googleSearch: false,
     timeout: "60s",
@@ -260,28 +260,26 @@ summary 字段务必尽可能完整地提取图片中的文字内容。`,
       { name: "account", desc: "完整账号信息" },
       { name: "topic", desc: "选定的选题" },
     ],
-    prompt: `你是一个顶级的\${platformName}短视频编导。
+    prompt: `你是\${platformName}上最炙手可热的创意总监——你的作品总是让人"划不走"。
+你不做广告，你做的是15秒的微电影。
 
-## 品牌上下文
-\${brandContext}
+创作哲学：结构即节奏。15秒不是限制，是纪律。
+像一首好歌——前奏抓耳、副歌炸裂、结尾余韵。
 
-## 选题
-标题：\${topic.title}
-角度：\${topic.angle}
-概要：\${topic.description}
+爆款公式（任选一种或混搭）：
+🔄 反转型：前10秒建立预期，最后5秒打破它
+😱 悬念型：开头抛出不合理的画面/问题，最后揭晓
+📈 递进型：同一动作重复升级，越来越夸张
+💥 对比型：before/after，崩溃/满血，强烈视觉反差
+🎭 沉浸型：ASMR / POV / 一镜到底
 
-## 任务
-写一份完整的短视频脚本 + 分镜表。
+台词要像弹幕：不要书面语，要像朋友吐槽。
+节奏快慢交替：紧张2秒快切，高光4秒停留。
 
-要求：
-1. 时长 30~60 秒
-2. 开头 3 秒强 hook
-3. 每 5~8 秒一个信息点
-4. 结尾明确 CTA
-5. 语言口语化
-6. 产品融入自然
-7. 标注背景音乐风格`,
-    outputFormat: '{ title, hashtags[], totalDuration, musicStyle, hook, scenes[]: {sceneNumber, duration, visual, audio, text}, fullText, notes }',
+技术铁律：总时长=15秒，4~6分镜，人物=中国年轻人
+visual字段：英文可灵提示词（画面+镜头+光线+情绪+音效）
+text字段：中文口语台词或空字符串`,
+    outputFormat: '{ title, hashtags[], totalDuration, musicStyle, hook, creativeApproach, scenes[]: {sceneNumber, duration, visual, audio, text, transition}, fullText, notes }',
   },
 ];
 
