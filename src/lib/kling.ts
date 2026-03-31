@@ -84,9 +84,14 @@ export async function createTextToVideo(params: {
   mode?: string;
   modelName?: string;
   sound?: string;
+  elementIds?: number[]; // Kling subject IDs for product consistency
 }): Promise<KlingVideoTask> {
+  // If we have subject references, use Omni Video API
+  const useOmni = params.elementIds && params.elementIds.length > 0;
+  const endpoint = useOmni ? "/v1/videos/omni-video" : "/v1/videos/text2video";
+
   const body: Record<string, unknown> = {
-    model_name: params.modelName || "kling-v3",
+    model_name: useOmni ? "kling-v3-omni" : (params.modelName || "kling-v3"),
     duration: params.duration || "5",
     aspect_ratio: params.aspectRatio || "9:16",
     mode: params.mode || "std",
@@ -102,8 +107,13 @@ export async function createTextToVideo(params: {
     body.prompt = params.prompt || "";
   }
 
+  // Add subject references for Omni API
+  if (useOmni && params.elementIds) {
+    body.element_list = params.elementIds.map((id) => ({ element_id: id }));
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data = await klingRequest("POST", "/v1/videos/text2video", body) as any;
+  const data = await klingRequest("POST", endpoint, body) as any;
 
   if (data.code !== 0) {
     throw new Error(`Kling error ${data.code}: ${data.message}`);
@@ -156,13 +166,19 @@ export async function createSubject(params: {
   description: string;
   imageBase64OrUrl: string;
 }): Promise<{ taskId: string }> {
+  // Strip data URL prefix if present — Kling wants raw base64 or public URL
+  let imageData = params.imageBase64OrUrl;
+  if (imageData.startsWith("data:")) {
+    imageData = imageData.replace(/^data:[^;]+;base64,/, "");
+  }
+
   const body: Record<string, unknown> = {
     element_name: params.name.substring(0, 20),
     element_description: params.description.substring(0, 100),
     reference_type: "image_refer",
     element_image_list: {
-      frontal_image: params.imageBase64OrUrl,
-      refer_images: [],
+      frontal_image: imageData,
+      refer_images: [{ image_url: imageData }], // Same image as refer (required 1-3)
     },
     tag_list: [{ tag_id: "o_104" }], // 道具
   };

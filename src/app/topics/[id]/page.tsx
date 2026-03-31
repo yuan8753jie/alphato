@@ -149,7 +149,7 @@ export default function TopicDetailPage() {
       }
 
       updateVideoState(tab, { taskId: data.task.taskId, status: "视频生成中..." });
-      const videoUrl = await pollVideoUntilDone(tab, data.task.taskId);
+      const videoUrl = await pollVideoUntilDone(tab, data.task.taskId, data.useOmni);
 
       if (!videoUrl) return; // pollVideo already set error state
 
@@ -184,11 +184,11 @@ export default function TopicDetailPage() {
     }
   }
 
-  async function pollVideoUntilDone(tab: VariantKey, taskId: string): Promise<string | null> {
+  async function pollVideoUntilDone(tab: VariantKey, taskId: string, useOmni?: boolean): Promise<string | null> {
     for (let i = 0; i < 120; i++) {
       await new Promise((r) => setTimeout(r, 5000));
       try {
-        const res = await fetch(`/api/video-status?taskId=${taskId}`);
+        const res = await fetch(`/api/video-status?taskId=${taskId}${useOmni ? "&omni=true" : ""}`);
         const data = await res.json();
         if (data.task?.status === "succeed" && data.task.videoUrl) {
           return data.task.videoUrl;

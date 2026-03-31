@@ -103,12 +103,13 @@ export async function POST(req: NextRequest) {
         multiPrompt: formattedPrompt,
         duration: duration || totalDuration,
         aspectRatio: aspectRatio || "9:16",
-        modelName: elementId ? "kling-v3-omni" : "kling-v3", // Use Omni when referencing subjects
+        modelName: "kling-v3",
+        elementIds: elementId ? [elementId] : undefined, // Auto-switches to Omni + omni-video endpoint
         mode: "std",
         sound: isVoiceover ? "on" : "off", // voiceover: on for speech; music: off, use video-to-audio API
       });
 
-      return NextResponse.json({ success: true, task });
+      return NextResponse.json({ success: true, task, useOmni: !!elementId });
     }
 
     return NextResponse.json({ error: "No scenes provided" }, { status: 400 });
