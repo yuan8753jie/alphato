@@ -12,11 +12,22 @@ export async function POST(req: NextRequest) {
       // Multi-shot: up to 6 scenes
       const maxScenes = Math.min(scenes.length, 6);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let multiPrompt = scenes.slice(0, maxScenes).map((scene: any, i: number) => ({
-        index: i + 1,
-        prompt: String(scene.visual || scene.prompt || ""),
-        duration: Math.max(1, Number(String(scene.duration || "3").replace(/[^0-9]/g, "")) || 3),
-      }));
+      let multiPrompt = scenes.slice(0, maxScenes).map((scene: any, i: number) => {
+        let prompt = String(scene.visual || scene.prompt || "");
+        const voiceover = String(scene.text || "");
+        if (voiceover) {
+          prompt += ` The person says: "${voiceover}"`;
+        }
+        // Kling limit: 512 chars per scene prompt
+        if (prompt.length > 510) {
+          prompt = prompt.substring(0, 510);
+        }
+        return {
+          index: i + 1,
+          prompt,
+          duration: Math.max(1, Number(String(scene.duration || "3").replace(/[^0-9]/g, "")) || 3),
+        };
+      });
 
       // Kling requires: total duration 5~15s, each scene ≥ 1s, sum(durations) = total
       let totalSec = multiPrompt.reduce((sum: number, s: { duration: number }) => sum + s.duration, 0);
