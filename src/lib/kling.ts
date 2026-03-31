@@ -115,6 +115,38 @@ export async function createTextToVideo(params: {
   };
 }
 
+export async function addSoundToVideo(params: {
+  videoUrl: string;
+  bgmPrompt?: string;
+  soundEffectPrompt?: string;
+  asmrMode?: boolean;
+}): Promise<{ taskId: string }> {
+  const body: Record<string, unknown> = {
+    video_url: params.videoUrl,
+  };
+  if (params.bgmPrompt) body.bgm_prompt = params.bgmPrompt.substring(0, 200);
+  if (params.soundEffectPrompt) body.sound_effect_prompt = params.soundEffectPrompt.substring(0, 200);
+  if (params.asmrMode) body.asmr_mode = true;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await klingRequest("POST", "/v1/audio/video-to-audio", body) as any;
+  if (data.code !== 0) throw new Error(`Kling error ${data.code}: ${data.message}`);
+  return { taskId: data.data.task_id };
+}
+
+export async function getSoundTaskStatus(taskId: string): Promise<{
+  status: string;
+  videoUrl?: string;
+}> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await klingRequest("GET", `/v1/audio/video-to-audio/${taskId}`) as any;
+  if (data.code !== 0) throw new Error(`Kling error ${data.code}: ${data.message}`);
+  return {
+    status: data.data.task_status,
+    videoUrl: data.data.task_result?.videos?.[0]?.url,
+  };
+}
+
 export async function getVideoTaskStatus(taskId: string): Promise<KlingVideoTask> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await klingRequest("GET", `/v1/videos/text2video/${taskId}`) as any;

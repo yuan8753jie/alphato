@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
         aspectRatio: aspectRatio || "9:16",
         modelName: "kling-v3",
         mode: "std",
-        sound: "on",
+        sound: "off", // kling-v3 doesn't support inline sound; use video-to-audio API separately
       });
 
       return NextResponse.json({ success: true, task });

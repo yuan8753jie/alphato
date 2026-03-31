@@ -125,44 +125,95 @@ export default function TopicDetailPage() {
     const tab = activeTab;
     const script = scripts[tab];
     if (!script?.scenes) return;
-    updateVideoState(tab, { loading: true, status: "提交中...", url: undefined });
+    const isMusic = tab.endsWith("music");
+    updateVideoState(tab, { loading: true, status: "提交视频生成...", url: undefined });
+
     try {
+      // Step 1: Generate video
       const res = await fetch("/api/generate-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scenes: script.scenes, aspectRatio: "9:16" }),
       });
       const data = await res.json();
-      if (data.success && data.task?.taskId) {
-        updateVideoState(tab, { taskId: data.task.taskId, status: "已提交..." });
-        pollVideo(tab, data.task.taskId);
-      } else {
+      if (!data.success || !data.task?.taskId) {
         setError(data.error || "提交失败");
         updateVideoState(tab, { loading: false });
+        return;
       }
+
+      updateVideoState(tab, { taskId: data.task.taskId, status: "视频生成中..." });
+      const videoUrl = await pollVideoUntilDone(tab, data.task.taskId);
+
+      if (!videoUrl) return; // pollVideo already set error state
+
+      // Step 2: If music variant, add BGM via video-to-audio API
+      if (isMusic && videoUrl) {
+        updateVideoState(tab, { status: "正在添加背景音乐..." });
+        try {
+          const bgmPrompt = script.musicStyle || "Upbeat energetic pop music with strong beats";
+          const soundRes = await fetch("/api/add-sound", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              videoUrl,
+              bgmPrompt,
+              asmrMode: script.musicStyle?.toLowerCase().includes("asmr"),
+            }),
+          });
+          const soundData = await soundRes.json();
+          if (soundData.success && soundData.taskId) {
+            updateVideoState(tab, { status: "音乐生成中..." });
+            await pollSoundUntilDone(tab, soundData.taskId);
+            return;
+          }
+        } catch { /* fall through to show video without music */ }
+      }
+
+      // For voiceover variants, just show the video
+      updateVideoState(tab, { url: videoUrl, status: "完成", loading: false });
     } catch (err) {
       setError(String(err));
       updateVideoState(tab, { loading: false });
     }
   }
 
-  async function pollVideo(tab: VariantKey, taskId: string) {
+  async function pollVideoUntilDone(tab: VariantKey, taskId: string): Promise<string | null> {
     for (let i = 0; i < 120; i++) {
       await new Promise((r) => setTimeout(r, 5000));
       try {
         const res = await fetch(`/api/video-status?taskId=${taskId}`);
         const data = await res.json();
         if (data.task?.status === "succeed" && data.task.videoUrl) {
-          updateVideoState(tab, { url: data.task.videoUrl, status: "完成", loading: false });
-          return;
+          return data.task.videoUrl;
         } else if (data.task?.status === "failed") {
-          updateVideoState(tab, { status: "失败：" + (data.task.statusMsg || ""), loading: false });
-          return;
+          updateVideoState(tab, { status: "视频生成失败", loading: false });
+          return null;
         }
-        updateVideoState(tab, { status: data.task?.status === "processing" ? "生成中..." : "排队中..." });
+        updateVideoState(tab, { status: data.task?.status === "processing" ? "视频生成中..." : "排队中..." });
       } catch { /* retry */ }
     }
     updateVideoState(tab, { status: "超时", loading: false });
+    return null;
+  }
+
+  async function pollSoundUntilDone(tab: VariantKey, taskId: string) {
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      try {
+        const res = await fetch(`/api/sound-status?taskId=${taskId}`);
+        const data = await res.json();
+        if (data.task?.status === "succeed" && data.task.videoUrl) {
+          updateVideoState(tab, { url: data.task.videoUrl, status: "完成（含音乐）", loading: false });
+          return;
+        } else if (data.task?.status === "failed") {
+          updateVideoState(tab, { status: "音乐添加失败", loading: false });
+          return;
+        }
+        updateVideoState(tab, { status: "音乐生成中..." });
+      } catch { /* retry */ }
+    }
+    updateVideoState(tab, { status: "音乐生成超时", loading: false });
   }
 
   if (!topic || !account) return null;
