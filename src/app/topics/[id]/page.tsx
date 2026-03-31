@@ -17,10 +17,10 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 const VARIANTS = [
-  { key: "free-voiceover", label: "口播", desc: "随意发挥 + 有台词旁白" },
-  { key: "free-music", label: "音乐卡点", desc: "随意发挥 + 纯音乐节奏驱动" },
-  { key: "creative-voiceover", label: "超创意口播", desc: "创造性方法论 + 有台词" },
-  { key: "creative-music", label: "超创意卡点", desc: "创造性方法论 + 纯音乐" },
+  { key: "free-voiceover", label: "稳健版·口播", desc: "常规热门模式 + 有台词旁白" },
+  { key: "free-music", label: "稳健版·音乐", desc: "常规热门模式 + 纯音乐驱动" },
+  { key: "creative-voiceover", label: "创意版·口播", desc: "创造性思维方法论 + 有台词" },
+  { key: "creative-music", label: "创意版·音乐", desc: "创造性思维方法论 + 纯音乐" },
 ] as const;
 
 type VariantKey = typeof VARIANTS[number]["key"];
@@ -73,30 +73,34 @@ export default function TopicDetailPage() {
     const allKeys = VARIANTS.map((v) => v.key);
     setLoadingVariants(new Set(allKeys));
 
-    // Fire all 4 in parallel
-    await Promise.allSettled(
-      allKeys.map(async (variant) => {
-        try {
-          const res = await fetch("/api/generate-script", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ account, topic, variant }),
-          });
-          const data = await res.json();
-          if (data.success && data.script) {
-            setScripts((prev) => ({ ...prev, [variant]: data.script }));
-            saveScript(data.script);
+    try {
+      // Single API call generates all 4 variants
+      const res = await fetch("/api/generate-script", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account, topic }),
+      });
+      const data = await res.json();
+
+      if (data.success && data.scripts) {
+        const newScripts: Record<string, unknown> = {};
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const script of data.scripts as any[]) {
+          if (script.variant) {
+            newScripts[script.variant] = script;
+            saveScript(script);
           }
-        } catch { /* ignore */ }
-        finally {
-          setLoadingVariants((prev) => {
-            const next = new Set(prev);
-            next.delete(variant);
-            return next;
-          });
         }
-      })
-    );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setScripts(newScripts as any);
+      } else {
+        setError(data.error || "脚本生成失败");
+      }
+    } catch (err) {
+      setError("请求失败：" + String(err));
+    } finally {
+      setLoadingVariants(new Set());
+    }
   }
 
   async function generateSceneImage(key: string, visual: string) {
@@ -352,12 +356,12 @@ export default function TopicDetailPage() {
               <table className="min-w-[900px] w-full text-xs">
                 <thead>
                   <tr className="bg-muted/50 text-left">
-                    <th className="px-3 py-2 w-14 shrink-0">镜号</th>
-                    <th className="px-3 py-2 w-14 shrink-0">秒数</th>
-                    <th className="px-3 py-2 min-w-[320px]">画面</th>
-                    <th className="px-3 py-2 min-w-[140px]">音频</th>
-                    <th className="px-3 py-2 min-w-[140px]">台词</th>
-                    <th className="px-3 py-2 w-16">转场</th>
+                    <th className="px-3 py-2 w-14">镜号</th>
+                    <th className="px-3 py-2 w-14">秒</th>
+                    <th className="px-3 py-2 w-28">镜头类型</th>
+                    <th className="px-3 py-2 min-w-[300px]">画面</th>
+                    <th className="px-3 py-2 min-w-[120px]">音效/音乐</th>
+                    <th className="px-3 py-2 min-w-[140px]">口播</th>
                     <th className="px-3 py-2 w-14 text-center">图</th>
                   </tr>
                 </thead>
@@ -376,6 +380,11 @@ export default function TopicDetailPage() {
                         <td className="px-3 py-2.5 font-bold">P{sn}</td>
                         <td className="px-3 py-2.5">{scene.duration}s</td>
                         <td className="px-3 py-2.5">
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                            {scene.shotType || "—"}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
                           <p className="text-[11px] leading-relaxed whitespace-pre-wrap">
                             {showEnglish ? visualEn : (visualCn || visualEn)}
                           </p>
@@ -385,8 +394,7 @@ export default function TopicDetailPage() {
                             {showEnglish ? audioEn : (audioCn || audioEn)}
                           </p>
                         </td>
-                        <td className="px-3 py-2.5 font-medium">{scene.text || <span className="text-muted-foreground italic">无台词</span>}</td>
-                        <td className="px-3 py-2.5 text-muted-foreground">{scene.transition || "—"}</td>
+                        <td className="px-3 py-2.5 font-medium">{scene.text || <span className="text-muted-foreground italic">无</span>}</td>
                         <td className="px-3 py-2.5 text-center">
                           {img ? (
                             <img src={img} alt={`P${sn}`} className="w-10 h-14 object-cover rounded mx-auto" />

@@ -3,40 +3,29 @@ import { geminiRequest, extractTextFromResponse } from "@/lib/gemini";
 import { buildBrandContext, getPlatformName } from "@/lib/brand-context";
 import type { Account, Topic } from "@/lib/types";
 
-export const maxDuration = 90;
+export const maxDuration = 120;
 
-type ScriptVariant = "free-voiceover" | "free-music" | "creative-voiceover" | "creative-music";
-
-const CREATIVE_METHODS = `可用的创造性方法论：
+const CREATIVE_METHODS = `可用的创造性思维方法论：
+- 强制关联法：把产品和完全不相关的事物强行建立联系
+- 逆向思维法：从结果倒推、或反着来讲故事
+- 降维打击法：用高维度的视角看低维度的事情
+- 跨界平移法：把其他领域的爆款套路搬过来
 - SCAMPER（替换/组合/夸张/反转）
-- 对立碰撞（产品×反差场景/人群/情绪）
 - POV 转换（从产品/气泡/冰块的视角）
 - 认知失调（第一帧"不对劲"的画面）
-- 具身隐喻（用动作表达抽象感受）
-- Rule of Three（前两个建预期，第三个打破）
-请从中选择最合适的方法论。`;
+- Rule of Three（前两个建预期，第三个打破）`;
 
 // ============================================================
-// Step 1: Free creative ideation — no format constraints
+// Step 1: Free creative ideation
 // ============================================================
 function buildIdeationPrompt(
   platformName: string,
   brandContext: string,
-  topic: Topic,
-  variant: ScriptVariant
+  topic: Topic
 ): string {
-  const isCreative = variant.startsWith("creative");
-  const isMusic = variant.endsWith("music");
-
-  const styleHint = isMusic
-    ? "这条是纯视觉+音乐节奏驱动的，没有台词，全靠画面和节拍讲故事。"
-    : "这条有口播/旁白，台词要像弹幕一样自然、有网感。";
-
-  const creativeHint = isCreative ? `\n\n${CREATIVE_METHODS}` : "";
-
   return `忘掉一切格式限制。你现在只需要做一件事：
 
-想出一个让人在${platformName}上**划不走**的 15 秒视频创意。
+想出 4 个让人在${platformName}上**划不走**的 15 秒视频创意。
 
 品牌：${brandContext}
 
@@ -44,119 +33,158 @@ function buildIdeationPrompt(
 角度：${topic.angle}
 概要：${topic.description}
 
-风格：${styleHint}${creativeHint}
+4 个创意分别是：
+1. **稳健常规版（带口播）**：符合直觉逻辑，有中文旁白/口播，追求"情理之中，意料之外"
+2. **稳健常规版（纯音乐）**：符合直觉逻辑，无口播，全靠画面+音乐+音效讲故事
+3. **极致创意版（带口播）**：运用创造性思维方法论，有中文旁白，出其不意
+4. **极致创意版（纯音乐）**：运用创造性思维方法论，无口播，纯视觉和音效震撼
 
-请用 100~200 字描述你的创意：
-1. 这 15 秒讲了一个什么故事？有什么反转/惊喜/情绪高潮？
-2. 开头第一秒观众看到什么？为什么他们会停下来？
-3. 什么时刻是情绪爆发点？
-4. 结束的瞬间观众会有什么反应？（想分享？笑了？被打动？）
+${CREATIVE_METHODS}
 
-不要写分镜、不要写 JSON、不要写技术参数。就像你在跟同事口头 pitch 一个创意一样，自由地说。`;
+核心准则：极强的"网感"，追求"情理之中，意料之外"。
+
+对每个创意，用 50~100 字描述：
+- 这 15 秒讲了什么故事？有什么反转/惊喜？
+- 开头第一秒观众看到什么？为什么停下来？
+- 情绪爆发点在哪里？
+- 如果是创意版，用了什么思维方法论？
+
+自由地说，不要 JSON，像跟同事 pitch 创意一样。`;
 }
 
 // ============================================================
-// Step 2: Structure the creative concept into production format
+// Step 2: Structure all 4 variants into production format (single call)
 // ============================================================
 function buildStructurePrompt(
   platformName: string,
-  concept: string,
-  variant: ScriptVariant
+  concepts: string
 ): string {
-  const isMusic = variant.endsWith("music");
-
-  const textInstruction = isMusic
-    ? `text 字段全部写空字符串（音乐卡点版无台词）`
-    : `text 字段写该镜头的中文口播台词（口语化、短句、像弹幕）`;
-
-  return `你是一个视频制作人。下面是创意总监给你的创意概念，请把它精确地拆成可执行的分镜脚本。
+  return `你是一个视频制作人。下面是创意总监给你的 4 个创意概念，请把它们精确地拆成 4 个可执行的分镜脚本。
 
 ## 创意概念
-${concept}
+${concepts}
 
-## 技术铁律
+## 技术铁律（每个变体都必须遵守）
 - 总时长 = 15 秒
 - 4~6 个分镜，duration 之和 = 15
 - 每个分镜 2~4 秒
 - 人物是典型中国年轻人（Chinese young person）
-- ${textInstruction}
 
-## visual 字段写法（这个字段会直接发给可灵 AI 生成视频）
-用英文写，必须包含：
-- 画面主体和动作（Chinese young man/woman, 具体外貌、表情、动作）
-- 镜头类型和运动（close-up / wide shot / tracking / slow-mo / quick zoom）
-- 光线氛围（warm / cool / neon / natural / dramatic）
-- 音乐/音效指令（beat drop / bass hit / ASMR crackle / upbeat pop）
+## 分镜写法
+每个 shot 需要：
+- shot_type: 镜头类型（如 EXTREME CLOSE-UP, WIDE SHOT, LOW ANGLE, TRACKING SHOT, FAST MONTAGE, POV SHOT 等）
+- visual: 英文画面描述（电影级，含人物外貌、表情、动作、光线、氛围）
+- visualCn: 上面的中文翻译
+- voice_over: 中文口播内容（无口播版留空字符串）
+- sfx: 音效/音乐描述（英文）
+- sfxCn: 音效中文翻译
+- duration: 秒数（纯数字）
 
-只返回 JSON：
+## 4 个变体的分类
+1. variation_id=1, label="稳健常规版（口播）", has_vo=true, is_creative=false
+2. variation_id=2, label="稳健常规版（音乐）", has_vo=false, is_creative=false
+3. variation_id=3, label="极致创意版（口播）", has_vo=true, is_creative=true
+4. variation_id=4, label="极致创意版（音乐）", has_vo=false, is_creative=true
+
+输出严格的 JSON 数组，包含 4 个变体对象。每个对象结构：
 {
+  "variation_id": 1,
+  "label": "稳健常规版（口播）",
+  "is_creative": false,
+  "has_vo": true,
+  "creative_method": "如果是创意版，写用了什么方法论",
   "title": "视频标题（像${platformName}爆款标题）",
-  "hashtags": ["标签1", "标签2"],
-  "totalDuration": "15",
-  "musicStyle": "音乐描述（风格、节奏、情绪变化）",
   "hook": "开头 hook",
-  "creativeApproach": "这条视频的创意核心是什么（一句话）",
-  "scenes": [
+  "creative_approach": "创意核心（一句话）",
+  "music_style": "音乐描述",
+  "hashtags": ["标签1", "标签2"],
+  "shots": [
     {
-      "sceneNumber": 1,
-      "duration": "3",
-      "visual": "可灵提示词（必须英文，详细画面+镜头+光线+动作+音效）",
-      "visualCn": "上面 visual 的中文翻译（通顺自然，给人看的）",
-      "audio": "音频描述（英文）",
-      "audioCn": "音频描述中文翻译",
-      "text": "${isMusic ? "" : "台词（中文）"}",
-      "transition": "转场"
+      "shot_id": 1,
+      "shot_type": "EXTREME CLOSE-UP",
+      "visual": "English cinematic description...",
+      "visualCn": "中文画面描述",
+      "voice_over": "中文口播（无口播留空）",
+      "sfx": "English sound/music description",
+      "sfxCn": "中文音效描述",
+      "duration": "3"
     }
   ],
-  "fullText": "${isMusic ? "（音乐卡点版，无口播）" : "完整台词"}",
+  "full_text": "完整口播稿（无口播版写'纯音乐卡点版'）",
   "notes": "导演备注"
 }
 
-duration 只写数字，之和 = 15。`;
+所有 duration 之和 = 15。只返回 JSON 数组。`;
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { account, topic, variant = "free-voiceover" } = (await req.json()) as {
+    const { account, topic } = (await req.json()) as {
       account: Account;
       topic: Topic;
-      variant?: ScriptVariant;
     };
 
     const platformName = getPlatformName(account.platform);
     const brandContext = buildBrandContext(account);
 
     // ===== Step 1: Free creative ideation =====
-    const ideationPrompt = buildIdeationPrompt(platformName, brandContext, topic, variant);
     const ideationData = await geminiRequest("gemini-2.5-flash", {
-      contents: [{ parts: [{ text: ideationPrompt }] }],
+      contents: [{ parts: [{ text: buildIdeationPrompt(platformName, brandContext, topic) }] }],
     });
-    const concept = extractTextFromResponse(ideationData);
+    const concepts = extractTextFromResponse(ideationData);
 
-    if (!concept) {
+    if (!concepts) {
       return NextResponse.json({ success: false, error: "创意构思失败" });
     }
 
-    // ===== Step 2: Structure into production format =====
-    const structurePrompt = buildStructurePrompt(platformName, concept, variant);
+    // ===== Step 2: Structure all 4 variants in ONE call =====
     const structureData = await geminiRequest("gemini-2.5-flash", {
-      contents: [{ parts: [{ text: structurePrompt }] }],
-    });
+      contents: [{ parts: [{ text: buildStructurePrompt(platformName, concepts) }] }],
+    }, 90000);
     const structureText = extractTextFromResponse(structureData);
 
     try {
-      const jsonMatch = structureText.match(/\{[\s\S]*\}/);
+      const jsonMatch = structureText.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
-        const scriptData = JSON.parse(jsonMatch[0]);
-        const script = {
-          id: `script_${variant}_${Date.now()}`,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const variations = JSON.parse(jsonMatch[0]) as any[];
+
+        // Map to our format
+        const scripts = variations.map((v) => ({
+          id: `script_v${v.variation_id}_${Date.now()}`,
           topicId: topic.id,
-          variant,
-          concept, // Store the raw creative concept for transparency
-          ...scriptData,
+          variant: v.variation_id === 1 ? "free-voiceover"
+            : v.variation_id === 2 ? "free-music"
+            : v.variation_id === 3 ? "creative-voiceover"
+            : "creative-music",
+          label: v.label,
+          isCreative: v.is_creative,
+          hasVo: v.has_vo,
+          creativeMethod: v.creative_method || "",
+          title: v.title,
+          hook: v.hook,
+          creativeApproach: v.creative_approach || "",
+          musicStyle: v.music_style,
+          hashtags: v.hashtags || [],
+          totalDuration: "15",
+          scenes: (v.shots || []).map((s: Record<string, unknown>) => ({
+            sceneNumber: s.shot_id,
+            shotType: s.shot_type,
+            visual: s.visual,
+            visualCn: s.visualCn,
+            audio: s.sfx,
+            audioCn: s.sfxCn,
+            text: s.voice_over || "",
+            duration: s.duration,
+            transition: "",
+          })),
+          fullText: v.full_text || "",
+          notes: v.notes || "",
+          concept: concepts,
           createdAt: new Date().toISOString(),
-        };
-        return NextResponse.json({ success: true, script });
+        }));
+
+        return NextResponse.json({ success: true, scripts });
       }
     } catch { /* ignore */ }
 
