@@ -1,11 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createTextToVideo } from "@/lib/kling";
+import { createTextToVideo, createSubject, getSubjectStatus } from "@/lib/kling";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
-    const { scenes, duration, aspectRatio } = await req.json();
+    const { scenes, duration, aspectRatio, productImage, productName } = await req.json();
+
+    // If product image provided, register it as a Kling subject first
+    let elementId: number | undefined;
+    if (productImage && productName) {
+      try {
+        const subjectResult = await createSubject({
+          name: productName,
+          description: `${productName} product, maintain exact appearance`,
+          imageBase64OrUrl: productImage,
+        });
+
+        // Poll for subject registration (max 30s)
+        for (let i = 0; i < 12; i++) {
+          await new Promise((r) => setTimeout(r, 2500));
+          const status = await getSubjectStatus(subjectResult.taskId);
+          if (status.status === "succeed" && status.elementId) {
+            elementId = status.elementId;
+            break;
+          } else if (status.status === "failed") {
+            break;
+          }
+        }
+      } catch {
+        // Subject registration failed, continue without it
+      }
+    }
 
     // Build multi-prompt from storyboard scenes
     if (scenes && scenes.length > 0) {
@@ -16,14 +42,13 @@ export async function POST(req: NextRequest) {
         const visual = String(scene.visual || scene.prompt || "");
         const voiceover = String(scene.text || "").trim();
 
-        // Build prompt: put voiceover FIRST so it doesn't get truncated
-        // Kling v3 supports in-prompt speech with natural language
+        // Build prompt with subject reference if available
+        const subjectRef = elementId ? `<<<element_${elementId}>>>` : "";
         let prompt: string;
         if (voiceover) {
-          // Voiceover first, then visual description
-          prompt = `A Chinese young person says: "${voiceover}". ${visual}`;
+          prompt = `A Chinese young person says: "${voiceover}". ${subjectRef} ${visual}`;
         } else {
-          prompt = visual;
+          prompt = `${subjectRef} ${visual}`;
         }
 
         // Kling limit: 512 chars per scene prompt — truncate visual if needed, keep voiceover intact
@@ -77,7 +102,7 @@ export async function POST(req: NextRequest) {
         multiPrompt: formattedPrompt,
         duration: duration || totalDuration,
         aspectRatio: aspectRatio || "9:16",
-        modelName: "kling-v3",
+        modelName: elementId ? "kling-v3-omni" : "kling-v3", // Use Omni when referencing subjects
         mode: "std",
         sound: "off", // kling-v3 doesn't support inline sound; use video-to-audio API separately
       });

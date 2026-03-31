@@ -147,6 +147,45 @@ export async function getSoundTaskStatus(taskId: string): Promise<{
   };
 }
 
+// ============================================================
+// Subject (Element) Management
+// ============================================================
+
+export async function createSubject(params: {
+  name: string;
+  description: string;
+  imageBase64OrUrl: string;
+}): Promise<{ taskId: string }> {
+  const body: Record<string, unknown> = {
+    element_name: params.name.substring(0, 20),
+    element_description: params.description.substring(0, 100),
+    reference_type: "image_refer",
+    element_image_list: {
+      frontal_image: params.imageBase64OrUrl,
+      refer_images: [],
+    },
+    tag_list: [{ tag_id: "o_104" }], // 道具
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await klingRequest("POST", "/v1/general/advanced-custom-elements", body) as any;
+  if (data.code !== 0) throw new Error(`Kling error ${data.code}: ${data.message}`);
+  return { taskId: data.data.task_id };
+}
+
+export async function getSubjectStatus(taskId: string): Promise<{
+  status: string;
+  elementId?: number;
+}> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await klingRequest("GET", `/v1/general/advanced-custom-elements/${taskId}`) as any;
+  if (data.code !== 0) throw new Error(`Kling error ${data.code}: ${data.message}`);
+  return {
+    status: data.data.task_status,
+    elementId: data.data.task_result?.elements?.[0]?.element_id,
+  };
+}
+
 export async function getVideoTaskStatus(taskId: string): Promise<KlingVideoTask> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await klingRequest("GET", `/v1/videos/text2video/${taskId}`) as any;

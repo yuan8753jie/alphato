@@ -133,7 +133,13 @@ export default function TopicDetailPage() {
       const res = await fetch("/api/generate-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenes: script.scenes, aspectRatio: "9:16" }),
+        body: JSON.stringify({
+          scenes: script.scenes,
+          aspectRatio: "9:16",
+          // Pass first product image for subject reference
+          productImage: account?.products?.[0]?.imagePaths?.[0] || undefined,
+          productName: account?.products?.[0]?.name || undefined,
+        }),
       });
       const data = await res.json();
       if (!data.success || !data.task?.taskId) {
