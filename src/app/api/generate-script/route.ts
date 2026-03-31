@@ -100,9 +100,11 @@ ${concept}
     {
       "sceneNumber": 1,
       "duration": "3",
-      "visual": "可灵提示词（英文）",
-      "audio": "音频层",
-      "text": "${isMusic ? "" : "台词"}",
+      "visual": "可灵提示词（必须英文，详细画面+镜头+光线+动作+音效）",
+      "visualCn": "上面 visual 的中文翻译（通顺自然，给人看的）",
+      "audio": "音频描述（英文）",
+      "audioCn": "音频描述中文翻译",
+      "text": "${isMusic ? "" : "台词（中文）"}",
       "transition": "转场"
     }
   ],

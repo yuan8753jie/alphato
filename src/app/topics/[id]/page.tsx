@@ -348,17 +348,17 @@ export default function TopicDetailPage() {
               </button>
             </div>
 
-            <div className="rounded-lg border overflow-hidden">
-              <table className="w-full text-xs">
+            <div className="rounded-lg border overflow-x-auto">
+              <table className="min-w-[900px] w-full text-xs">
                 <thead>
-                  <tr className="bg-muted/50">
-                    <th className="px-3 py-2 text-left w-12">镜号</th>
-                    <th className="px-3 py-2 text-left w-12">秒数</th>
-                    <th className="px-3 py-2 text-left">画面 / 可灵提示词</th>
-                    <th className="px-3 py-2 text-left w-24">音频</th>
-                    <th className="px-3 py-2 text-left w-32">台词</th>
-                    <th className="px-3 py-2 text-left w-16">转场</th>
-                    <th className="px-3 py-2 w-12">图</th>
+                  <tr className="bg-muted/50 text-left">
+                    <th className="px-3 py-2 w-14 shrink-0">镜号</th>
+                    <th className="px-3 py-2 w-14 shrink-0">秒数</th>
+                    <th className="px-3 py-2 min-w-[320px]">画面</th>
+                    <th className="px-3 py-2 min-w-[140px]">音频</th>
+                    <th className="px-3 py-2 min-w-[140px]">台词</th>
+                    <th className="px-3 py-2 w-16">转场</th>
+                    <th className="px-3 py-2 w-14 text-center">图</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -366,32 +366,35 @@ export default function TopicDetailPage() {
                     const sn = Number(scene.sceneNumber);
                     const imgKey = `${activeTab}_${sn}`;
                     const img = sceneImages[imgKey];
-                    const visual = String(scene.visual || "");
+                    const visualEn = String(scene.visual || "");
+                    const visualCn = String(scene.visualCn || "");
+                    const audioEn = String(scene.audio || "");
+                    const audioCn = String(scene.audioCn || "");
 
                     return (
-                      <tr key={i} className="hover:bg-muted/20">
-                        <td className="px-3 py-2 font-bold text-center">P{sn}</td>
-                        <td className="px-3 py-2 text-center">{scene.duration}s</td>
-                        <td className="px-3 py-2">
-                          {showEnglish ? (
-                            <p className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">{visual}</p>
-                          ) : (
-                            <p className="text-[11px] leading-relaxed whitespace-pre-wrap">
-                              {visual.length > 0 ? visual : "—"}
-                            </p>
-                          )}
+                      <tr key={i} className="hover:bg-muted/20 align-top">
+                        <td className="px-3 py-2.5 font-bold">P{sn}</td>
+                        <td className="px-3 py-2.5">{scene.duration}s</td>
+                        <td className="px-3 py-2.5">
+                          <p className="text-[11px] leading-relaxed whitespace-pre-wrap">
+                            {showEnglish ? visualEn : (visualCn || visualEn)}
+                          </p>
                         </td>
-                        <td className="px-3 py-2 text-muted-foreground">{scene.audio || "—"}</td>
-                        <td className="px-3 py-2 font-medium">{scene.text || <span className="text-muted-foreground italic">无</span>}</td>
-                        <td className="px-3 py-2 text-muted-foreground">{scene.transition || "—"}</td>
-                        <td className="px-3 py-2 text-center">
+                        <td className="px-3 py-2.5 text-muted-foreground">
+                          <p className="text-[11px] leading-relaxed">
+                            {showEnglish ? audioEn : (audioCn || audioEn)}
+                          </p>
+                        </td>
+                        <td className="px-3 py-2.5 font-medium">{scene.text || <span className="text-muted-foreground italic">无台词</span>}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground">{scene.transition || "—"}</td>
+                        <td className="px-3 py-2.5 text-center">
                           {img ? (
                             <img src={img} alt={`P${sn}`} className="w-10 h-14 object-cover rounded mx-auto" />
                           ) : (
                             <button
-                              onClick={() => generateSceneImage(imgKey, visual)}
+                              onClick={() => generateSceneImage(imgKey, visualEn)}
                               disabled={generatingScene !== null}
-                              className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
+                              className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
                             >
                               {generatingScene === imgKey ? "..." : "生成"}
                             </button>
