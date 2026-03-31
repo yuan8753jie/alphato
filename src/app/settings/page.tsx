@@ -511,14 +511,23 @@ export default function SetupPage() {
                                 body: JSON.stringify({ productName: product.name, brandName: account.brand.name }),
                               });
                               const data = await res.json();
-                              if (data.success && data.images?.length > 0) {
-                                updateProduct(i, "imagePaths", [...product.imagePaths, ...data.images]);
+                              const urls: string[] = [];
+                              // Collect image URLs from LLM response
+                              if (data.images?.length > 0) {
+                                urls.push(...data.images.map((img: { url: string }) => img.url));
+                              }
+                              // Also collect grounding URLs as reference
+                              if (data.groundingUrls?.length > 0) {
+                                urls.push(...data.groundingUrls.map((g: { url: string }) => g.url));
+                              }
+                              if (urls.length > 0) {
+                                updateProduct(i, "imagePaths", [...product.imagePaths, ...urls.slice(0, 5)]);
                               }
                             } catch { /* ignore */ }
                             finally { setSearchingProductImage(null); }
                           }}
                         >
-                          {searchingProductImage === i ? "生成中..." : "AI 生成产品图"}
+                          {searchingProductImage === i ? "搜索中..." : "AI 搜索产品图"}
                         </button>
                       </div>
                       <Button
