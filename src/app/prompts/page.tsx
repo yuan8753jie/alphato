@@ -252,33 +252,37 @@ summary 字段务必尽可能完整地提取图片中的文字内容。`,
     stage: "创作",
     stageColor: "bg-green-100 text-green-700",
     icon: Clapperboard,
-    purpose: "15秒微电影式脚本：有创意公式（反转/悬念/递进/对比/沉浸）、可灵视频提示词、弹幕风台词",
+    purpose: "4 组并行脚本：口播/音乐卡点 × 随意发挥/超级创意，含 SCAMPER 等创造性方法论",
     model: "gemini-2.5-flash",
     googleSearch: false,
-    timeout: "60s",
+    timeout: "60s × 4 并行",
     inputs: [
       { name: "account", desc: "完整账号信息" },
       { name: "topic", desc: "选定的选题" },
+      { name: "variant", desc: "变体：free-voiceover / free-music / creative-voiceover / creative-music" },
     ],
-    prompt: `你是\${platformName}上最炙手可热的创意总监——你的作品总是让人"划不走"。
-你不做广告，你做的是15秒的微电影。
+    prompt: `API 接受 variant 参数，生成 4 种风格的脚本：
 
-创作哲学：结构即节奏。15秒不是限制，是纪律。
-像一首好歌——前奏抓耳、副歌炸裂、结尾余韵。
+━━ 4 种变体 ━━
+1. free-voiceover：随意发挥 + 口播台词
+2. free-music：随意发挥 + 音乐卡点（无台词，纯节奏驱动）
+3. creative-voiceover：创造性方法论 + 口播
+4. creative-music：创造性方法论 + 音乐卡点
 
-爆款公式（任选一种或混搭）：
-🔄 反转型：前10秒建立预期，最后5秒打破它
-😱 悬念型：开头抛出不合理的画面/问题，最后揭晓
-📈 递进型：同一动作重复升级，越来越夸张
-💥 对比型：before/after，崩溃/满血，强烈视觉反差
-🎭 沉浸型：ASMR / POV / 一镜到底
+━━ 创造性方法论（creative 变体使用）━━
+SCAMPER：替换/组合/夸张/反转
+对立碰撞：产品×反差场景/人群/情绪
+POV 转换：从产品/气泡/冰块的视角讲故事
+认知失调：第一帧就给"不对劲"的画面
+具身隐喻：用身体动作表达抽象感受
+Rule of Three：前两个建预期，第三个打破
 
-台词要像弹幕：不要书面语，要像朋友吐槽。
-节奏快慢交替：紧张2秒快切，高光4秒停留。
+━━ 口播 vs 音乐卡点 ━━
+口播：台词像弹幕，网络热词，短句为王
+音乐卡点：text 全空，画面切换卡节拍，像 MV
 
-技术铁律：总时长=15秒，4~6分镜，人物=中国年轻人
-visual字段：英文可灵提示词（画面+镜头+光线+情绪+音效）
-text字段：中文口语台词或空字符串`,
+━━ 技术铁律 ━━
+15秒，4~6分镜，中国年轻人，visual英文可灵提示词`,
     outputFormat: '{ title, hashtags[], totalDuration, musicStyle, hook, creativeApproach, scenes[]: {sceneNumber, duration, visual, audio, text, transition}, fullText, notes }',
   },
 ];

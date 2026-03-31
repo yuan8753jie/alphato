@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getAccount, getTopics, getScripts, saveScript } from "@/lib/store";
-import type { Account, Topic, Script } from "@/lib/types";
+import type { Account, Topic } from "@/lib/types";
 import { TOPIC_TYPE_LABELS } from "@/lib/types";
 
 const TYPE_COLORS: Record<string, string> = {
@@ -16,6 +16,15 @@ const TYPE_COLORS: Record<string, string> = {
   persona: "bg-purple-100 text-purple-800",
 };
 
+const VARIANTS = [
+  { key: "free-voiceover", label: "口播", desc: "随意发挥 + 有台词旁白" },
+  { key: "free-music", label: "音乐卡点", desc: "随意发挥 + 纯音乐节奏驱动" },
+  { key: "creative-voiceover", label: "超创意口播", desc: "创造性方法论 + 有台词" },
+  { key: "creative-music", label: "超创意卡点", desc: "创造性方法论 + 纯音乐" },
+] as const;
+
+type VariantKey = typeof VARIANTS[number]["key"];
+
 export default function TopicDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -24,12 +33,12 @@ export default function TopicDetailPage() {
   const [account, setAccount] = useState<Account | null>(null);
   const [topic, setTopic] = useState<Topic | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [script, setScript] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [scripts, setScripts] = useState<Record<VariantKey, any>>({} as Record<VariantKey, any>);
+  const [loadingVariants, setLoadingVariants] = useState<Set<VariantKey>>(new Set());
+  const [activeTab, setActiveTab] = useState<VariantKey>("free-voiceover");
   const [error, setError] = useState<string | null>(null);
-  const [sceneImages, setSceneImages] = useState<Record<number, string>>({});
-  const [generatingScene, setGeneratingScene] = useState<number | null>(null);
-  const [generatingAll, setGeneratingAll] = useState(false);
+  const [sceneImages, setSceneImages] = useState<Record<string, string>>({});
+  const [generatingScene, setGeneratingScene] = useState<string | null>(null);
   const [videoTaskId, setVideoTaskId] = useState<string | null>(null);
   const [videoStatus, setVideoStatus] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -39,154 +48,143 @@ export default function TopicDetailPage() {
     const acc = getAccount();
     if (!acc) { router.push("/settings"); return; }
     setAccount(acc);
-
     const topics = getTopics();
     const found = topics.find((t) => t.id === topicId);
     if (!found) { router.push("/topics"); return; }
     setTopic(found);
 
-    const scripts = getScripts();
-    const existing = scripts.find((s) => s.topicId === topicId);
-    if (existing) setScript(existing);
+    // Load existing scripts for this topic
+    const existing = getScripts().filter((s) => s.topicId === topicId);
+    const map: Record<string, unknown> = {};
+    for (const s of existing) {
+      if (s.variant) map[s.variant] = s;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (Object.keys(map).length > 0) setScripts(map as any);
   }, [topicId, router]);
 
-  async function generateScript() {
+  async function generateAllVariants() {
     if (!account || !topic) return;
-    setLoading(true);
     setError(null);
+    const allKeys = VARIANTS.map((v) => v.key);
+    setLoadingVariants(new Set(allKeys));
 
-    try {
-      const res = await fetch("/api/generate-script", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account, topic }),
-      });
-      const data = await res.json();
-      if (data.success && data.script) {
-        setScript(data.script);
-        saveScript(data.script);
-      } else {
-        setError(data.error || "脚本生成失败");
-      }
-    } catch (err) {
-      setError("请求失败：" + String(err));
-    } finally {
-      setLoading(false);
-    }
+    // Fire all 4 in parallel
+    await Promise.allSettled(
+      allKeys.map(async (variant) => {
+        try {
+          const res = await fetch("/api/generate-script", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ account, topic, variant }),
+          });
+          const data = await res.json();
+          if (data.success && data.script) {
+            setScripts((prev) => ({ ...prev, [variant]: data.script }));
+            saveScript(data.script);
+          }
+        } catch { /* ignore */ }
+        finally {
+          setLoadingVariants((prev) => {
+            const next = new Set(prev);
+            next.delete(variant);
+            return next;
+          });
+        }
+      })
+    );
   }
 
-  async function generateSceneImage(sceneNumber: number, visual: string) {
-    setGeneratingScene(sceneNumber);
+  async function generateSceneImage(key: string, visual: string) {
+    setGeneratingScene(key);
     try {
       const res = await fetch("/api/generate-storyboard-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ visual, sceneNumber, aspectRatio: "9:16" }),
+        body: JSON.stringify({ visual, aspectRatio: "9:16" }),
       });
       const data = await res.json();
       if (data.success && data.image?.dataUrl) {
-        setSceneImages((prev) => ({ ...prev, [sceneNumber]: data.image.dataUrl }));
+        setSceneImages((prev) => ({ ...prev, [key]: data.image.dataUrl }));
       }
     } catch { /* ignore */ }
     finally { setGeneratingScene(null); }
   }
 
-  async function generateAllImages() {
-    if (!script?.scenes) return;
-    setGeneratingAll(true);
-    for (const scene of script.scenes) {
-      if (!sceneImages[scene.sceneNumber]) {
-        await generateSceneImage(scene.sceneNumber, scene.visual);
-      }
-    }
-    setGeneratingAll(false);
-  }
-
   async function generateVideo() {
+    const script = scripts[activeTab];
     if (!script?.scenes) return;
     setVideoLoading(true);
     setVideoStatus("提交中...");
     setVideoUrl(null);
-    setError(null);
-
     try {
       const res = await fetch("/api/generate-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scenes: script.scenes,
-          aspectRatio: "9:16",
-        }),
+        body: JSON.stringify({ scenes: script.scenes, aspectRatio: "9:16" }),
       });
       const data = await res.json();
       if (data.success && data.task?.taskId) {
         setVideoTaskId(data.task.taskId);
         setVideoStatus("已提交，等待生成...");
-        // Start polling
-        pollVideoStatus(data.task.taskId);
+        pollVideo(data.task.taskId);
       } else {
-        setError(data.error || "视频生成提交失败");
+        setError(data.error || "提交失败");
         setVideoLoading(false);
       }
     } catch (err) {
-      setError("请求失败：" + String(err));
+      setError(String(err));
       setVideoLoading(false);
     }
   }
 
-  async function pollVideoStatus(taskId: string) {
-    const maxAttempts = 120; // 10 minutes max (5s interval)
-    for (let i = 0; i < maxAttempts; i++) {
+  async function pollVideo(taskId: string) {
+    for (let i = 0; i < 120; i++) {
       await new Promise((r) => setTimeout(r, 5000));
       try {
         const res = await fetch(`/api/video-status?taskId=${taskId}`);
         const data = await res.json();
-        if (data.success && data.task) {
-          const { status, videoUrl: url, statusMsg } = data.task;
-          if (status === "succeed" && url) {
-            setVideoUrl(url);
-            setVideoStatus("生成完成");
-            setVideoLoading(false);
-            return;
-          } else if (status === "failed") {
-            setVideoStatus("生成失败：" + (statusMsg || ""));
-            setVideoLoading(false);
-            return;
-          } else {
-            setVideoStatus(status === "processing" ? "生成中..." : "排队中...");
-          }
+        if (data.task?.status === "succeed" && data.task.videoUrl) {
+          setVideoUrl(data.task.videoUrl);
+          setVideoStatus("完成");
+          setVideoLoading(false);
+          return;
+        } else if (data.task?.status === "failed") {
+          setVideoStatus("失败：" + (data.task.statusMsg || ""));
+          setVideoLoading(false);
+          return;
         }
-      } catch {
-        // Retry on error
-      }
+        setVideoStatus(data.task?.status === "processing" ? "生成中..." : "排队中...");
+      } catch { /* retry */ }
     }
-    setVideoStatus("超时，请稍后查询");
+    setVideoStatus("超时");
     setVideoLoading(false);
   }
 
   if (!topic || !account) return null;
 
+  const activeScript = scripts[activeTab];
+  const isGenerating = loadingVariants.size > 0;
+
   return (
     <div className="max-w-4xl">
-      {/* Back + header */}
       <Button onClick={() => router.push("/topics")} variant="ghost" size="sm" className="mb-4 -ml-2 text-muted-foreground">
         ← 返回选题列表
       </Button>
 
+      {/* Topic header */}
       <div className="flex items-start justify-between mb-6">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <span className={`text-xs px-2 py-0.5 rounded font-medium ${TYPE_COLORS[topic.type] || ""}`}>
               {TOPIC_TYPE_LABELS[topic.type] || topic.type}
             </span>
-            <Badge variant="outline" className="text-xs">{topic.status}</Badge>
           </div>
           <h1 className="text-xl font-bold">{topic.title}</h1>
           <p className="text-sm text-muted-foreground mt-1">{topic.angle}</p>
-          <p className="text-sm mt-2">{topic.description}</p>
         </div>
-        <Button onClick={generateScript} disabled={loading} size="sm">
-          {loading ? "AI 编导创作中..." : script ? "重新生成" : "生成脚本"}
+        <Button onClick={generateAllVariants} disabled={isGenerating} size="sm">
+          {isGenerating ? `生成中（${4 - loadingVariants.size}/4）...` : Object.keys(scripts).length > 0 ? "重新生成 4 组" : "生成 4 组脚本"}
         </Button>
       </div>
 
@@ -194,28 +192,60 @@ export default function TopicDetailPage() {
         <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded-md text-sm">{error}</div>
       )}
 
-      {script ? (
+      {/* Variant tabs */}
+      <div className="flex items-center border-b mb-6">
+        {VARIANTS.map((v) => {
+          const hasScript = !!scripts[v.key];
+          const isLoading = loadingVariants.has(v.key);
+          return (
+            <button
+              key={v.key}
+              onClick={() => { setActiveTab(v.key); setVideoUrl(null); setVideoLoading(false); }}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                activeTab === v.key
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {v.label}
+              {isLoading && <span className="ml-1 text-xs animate-pulse">⏳</span>}
+              {hasScript && !isLoading && <span className="ml-1 text-xs text-green-600">✓</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Script content */}
+      {activeScript ? (
         <div className="space-y-6">
-          {/* Script overview */}
+          {/* Creative approach */}
+          {activeScript.creativeApproach && (
+            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+              <p className="text-xs font-semibold text-amber-800 mb-1">创意手法</p>
+              <p className="text-sm text-amber-900">{activeScript.creativeApproach}</p>
+            </div>
+          )}
+
+          {/* Overview */}
           <Card>
             <CardContent className="py-4">
               <div className="grid grid-cols-2 gap-x-8 gap-y-3">
                 <div>
                   <p className="text-[10px] text-muted-foreground mb-0.5">视频标题</p>
-                  <p className="text-sm font-semibold">{script.title}</p>
+                  <p className="text-sm font-semibold">{activeScript.title}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-muted-foreground mb-0.5">总时长</p>
-                  <p className="text-sm font-medium">{script.totalDuration}</p>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">时长</p>
+                  <p className="text-sm font-medium">{activeScript.totalDuration}秒</p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-muted-foreground mb-0.5">背景音乐</p>
-                  <p className="text-sm">{script.musicStyle}</p>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">音乐</p>
+                  <p className="text-sm">{activeScript.musicStyle}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-muted-foreground mb-0.5">话题标签</p>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">标签</p>
                   <div className="flex flex-wrap gap-1">
-                    {script.hashtags?.map((tag: string, i: number) => (
+                    {activeScript.hashtags?.map((tag: string, i: number) => (
                       <span key={i} className="text-xs px-1.5 py-0.5 rounded bg-muted">#{tag}</span>
                     ))}
                   </div>
@@ -225,96 +255,66 @@ export default function TopicDetailPage() {
           </Card>
 
           {/* Hook */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Hook（前 3 秒）</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-base font-semibold text-primary">{script.hook}</p>
-            </CardContent>
-          </Card>
+          {activeScript.hook && (
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Hook</CardTitle></CardHeader>
+              <CardContent>
+                <p className="text-base font-semibold text-primary">{activeScript.hook}</p>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Storyboard */}
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-bold">分镜表</h2>
-              {script.scenes?.length > 0 && (
-                <Button
-                  onClick={generateAllImages}
-                  disabled={generatingAll || generatingScene !== null}
-                  variant="outline"
-                  size="sm"
-                >
-                  {generatingAll ? `生成中（${Object.keys(sceneImages).length}/${script.scenes.length}）...` : "生成全部分镜图"}
-                </Button>
-              )}
-            </div>
+            <h2 className="text-base font-bold mb-3">分镜表</h2>
             <div className="space-y-3">
-              {script.scenes?.map((scene: Record<string, string | number>, i: number) => {
+              {activeScript.scenes?.map((scene: Record<string, string | number>, i: number) => {
                 const sn = Number(scene.sceneNumber);
-                const img = sceneImages[sn];
-                const isGenerating = generatingScene === sn;
-
+                const imgKey = `${activeTab}_${sn}`;
+                const img = sceneImages[imgKey];
                 return (
                   <Card key={i} className="overflow-hidden">
                     <div className="flex">
-                      {/* Left: scene image or number */}
-                      <div className="w-28 bg-muted flex flex-col items-center justify-center shrink-0 relative">
+                      <div className="w-24 bg-muted flex flex-col items-center justify-center shrink-0 relative">
                         {img ? (
                           <img src={img} alt={`P${sn}`} className="w-full h-full object-cover" />
-                        ) : isGenerating ? (
-                          <div className="flex flex-col items-center gap-1">
-                            <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                            <span className="text-[10px] text-muted-foreground">生成中</span>
-                          </div>
+                        ) : generatingScene === imgKey ? (
+                          <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                         ) : (
                           <div className="flex flex-col items-center gap-1">
                             <span className="text-lg font-bold">P{sn}</span>
-                            <span className="text-[10px] text-muted-foreground">{scene.duration}</span>
+                            <span className="text-[10px] text-muted-foreground">{scene.duration}秒</span>
                             <button
-                              onClick={() => generateSceneImage(sn, String(scene.visual))}
+                              onClick={() => generateSceneImage(imgKey, String(scene.visual))}
                               disabled={generatingScene !== null}
-                              className="mt-1 text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                              className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20"
                             >
                               生成图
                             </button>
                           </div>
                         )}
-                        {img && (
-                          <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded">
-                            P{sn} · {scene.duration}
-                          </div>
-                        )}
+                        {img && <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1 rounded">P{sn}·{scene.duration}s</div>}
                       </div>
-
                       <CardContent className="flex-1 py-3 px-4 space-y-2">
-                        {/* Visual / Kling prompt */}
                         <div>
                           <div className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[10px] font-semibold text-muted-foreground">画面 / 视频生成提示词</span>
-                            <Badge variant="outline" className="text-[9px] h-4">Kling Prompt</Badge>
+                            <span className="text-[10px] font-semibold text-muted-foreground">画面</span>
+                            <Badge variant="outline" className="text-[9px] h-4">Kling</Badge>
                           </div>
-                          <div className="rounded-lg bg-slate-950 text-slate-200 p-3">
-                            <p className="text-xs leading-relaxed font-mono whitespace-pre-wrap">{scene.visual}</p>
+                          <div className="rounded-lg bg-slate-950 text-slate-200 p-2.5">
+                            <p className="text-[11px] leading-relaxed font-mono whitespace-pre-wrap">{scene.visual}</p>
                           </div>
                         </div>
-
-                        {/* Audio + Text row */}
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <p className="text-[10px] font-semibold text-muted-foreground mb-1">声音</p>
+                            <p className="text-[10px] font-semibold text-muted-foreground mb-0.5">音频</p>
                             <p className="text-xs text-muted-foreground">{scene.audio}</p>
                           </div>
                           <div>
-                            <p className="text-[10px] font-semibold text-muted-foreground mb-1">字幕 / 口播</p>
-                            <p className="text-xs font-medium">{scene.text}</p>
+                            <p className="text-[10px] font-semibold text-muted-foreground mb-0.5">台词</p>
+                            <p className="text-xs font-medium">{scene.text || <span className="text-muted-foreground italic">（无台词）</span>}</p>
                           </div>
                         </div>
-
-                        {/* Transition */}
-                        {scene.transition && (
-                          <p className="text-[10px] text-muted-foreground">转场：{scene.transition}</p>
-                        )}
                       </CardContent>
                     </div>
                   </Card>
@@ -323,39 +323,32 @@ export default function TopicDetailPage() {
             </div>
           </div>
 
-          {/* Full voiceover */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">完整口播稿</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm whitespace-pre-wrap leading-relaxed">{script.fullText}</p>
-            </CardContent>
-          </Card>
-
-          {/* Director notes */}
-          {script.notes && (
+          {/* Full text */}
+          {activeScript.fullText && activeScript.fullText !== "（音乐卡点版，无口播）" && (
             <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">导演备注</CardTitle>
-              </CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">完整口播稿</CardTitle></CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{script.notes}</p>
+                <p className="text-sm whitespace-pre-wrap leading-relaxed">{activeScript.fullText}</p>
               </CardContent>
             </Card>
           )}
 
-          {/* Video generation */}
+          {/* Notes */}
+          {activeScript.notes && (
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">导演备注</CardTitle></CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{activeScript.notes}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Video */}
           <Card>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm">视频 Demo</CardTitle>
-                <Button
-                  onClick={generateVideo}
-                  disabled={videoLoading || !script.scenes?.length}
-                  size="sm"
-                  variant={videoUrl ? "outline" : "default"}
-                >
+                <Button onClick={generateVideo} disabled={videoLoading} size="sm" variant={videoUrl ? "outline" : "default"}>
                   {videoLoading ? videoStatus : videoUrl ? "重新生成" : "生成视频（可灵）"}
                 </Button>
               </div>
@@ -363,52 +356,39 @@ export default function TopicDetailPage() {
             <CardContent>
               {videoUrl ? (
                 <div className="space-y-3">
-                  <video
-                    src={videoUrl}
-                    controls
-                    className="w-full max-w-sm mx-auto rounded-lg shadow-lg"
-                    playsInline
-                  />
-                  <div className="flex items-center justify-center gap-3">
-                    <a
-                      href={videoUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-muted-foreground hover:text-foreground hover:underline"
-                    >
-                      新窗口打开 ↗
-                    </a>
-                    <a
-                      href={videoUrl}
-                      download
-                      className="text-xs text-muted-foreground hover:text-foreground hover:underline"
-                    >
-                      下载视频
-                    </a>
+                  <video src={videoUrl} controls className="w-full max-w-sm mx-auto rounded-lg shadow-lg" playsInline />
+                  <div className="flex justify-center gap-3">
+                    <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:underline">新窗口 ↗</a>
+                    <a href={videoUrl} download className="text-xs text-muted-foreground hover:underline">下载</a>
                   </div>
                 </div>
               ) : videoLoading ? (
                 <div className="text-center py-8">
                   <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                   <p className="text-sm text-muted-foreground">{videoStatus}</p>
-                  <p className="text-xs text-muted-foreground mt-1">可灵 AI 正在生成视频，通常需要 1~5 分钟</p>
-                  {videoTaskId && (
-                    <p className="text-[10px] text-muted-foreground mt-2 font-mono">Task: {videoTaskId}</p>
-                  )}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  基于分镜表调用可灵 AI 生成短视频 Demo（多镜头，9:16竖版）
-                </p>
+                <p className="text-sm text-muted-foreground text-center py-4">基于当前 tab 的分镜生成视频</p>
               )}
             </CardContent>
           </Card>
         </div>
+      ) : loadingVariants.has(activeTab) ? (
+        <div className="text-center py-20">
+          <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground">
+            {VARIANTS.find((v) => v.key === activeTab)?.desc}...
+          </p>
+        </div>
       ) : (
         <Card>
           <CardContent className="py-16 text-center">
-            <p className="text-muted-foreground text-sm mb-4">点击"生成脚本"，AI 编导将创作完整的短视频脚本和分镜表</p>
-            <p className="text-xs text-muted-foreground">每个分镜的画面描述将自动优化为 AI 视频生成提示词</p>
+            <p className="text-muted-foreground text-sm mb-2">点击"生成 4 组脚本"，AI 将并行创作 4 种风格：</p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {VARIANTS.map((v) => (
+                <span key={v.key} className="text-xs px-2.5 py-1 rounded-full bg-muted">{v.label}：{v.desc}</span>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}
