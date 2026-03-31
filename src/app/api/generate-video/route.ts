@@ -5,7 +5,8 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
-    const { scenes, duration, aspectRatio, productImage, productName } = await req.json();
+    const { scenes, duration, aspectRatio, productImage, productName, variant } = await req.json();
+    const isVoiceover = !variant || variant.endsWith("voiceover");
 
     // If product image provided, register it as a Kling subject first
     let elementId: number | undefined;
@@ -104,7 +105,7 @@ export async function POST(req: NextRequest) {
         aspectRatio: aspectRatio || "9:16",
         modelName: elementId ? "kling-v3-omni" : "kling-v3", // Use Omni when referencing subjects
         mode: "std",
-        sound: "off", // kling-v3 doesn't support inline sound; use video-to-audio API separately
+        sound: isVoiceover ? "on" : "off", // voiceover: on for speech; music: off, use video-to-audio API
       });
 
       return NextResponse.json({ success: true, task });

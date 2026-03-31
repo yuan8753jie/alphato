@@ -136,7 +136,7 @@ export default function TopicDetailPage() {
         body: JSON.stringify({
           scenes: script.scenes,
           aspectRatio: "9:16",
-          // Pass first product image for subject reference
+          variant: tab,
           productImage: account?.products?.[0]?.imagePaths?.[0] || undefined,
           productName: account?.products?.[0]?.name || undefined,
         }),
