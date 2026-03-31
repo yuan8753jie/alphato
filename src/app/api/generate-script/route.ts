@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
     // ===== Step 2: Structure all 4 variants in ONE call =====
     const structureData = await geminiRequest("gemini-2.5-flash", {
       contents: [{ parts: [{ text: buildStructurePrompt(platformName, concepts) }] }],
-    }, 90000);
+    }, 120000);
     const structureText = extractTextFromResponse(structureData);
 
     try {

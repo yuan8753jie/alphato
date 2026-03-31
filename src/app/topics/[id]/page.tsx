@@ -75,11 +75,15 @@ export default function TopicDetailPage() {
 
     try {
       // Single API call generates all 4 variants
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 150000);
       const res = await fetch("/api/generate-script", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ account, topic }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       const data = await res.json();
 
       if (data.success && data.scripts) {
