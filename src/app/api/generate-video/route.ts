@@ -13,15 +13,31 @@ export async function POST(req: NextRequest) {
       const maxScenes = Math.min(scenes.length, 6);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let multiPrompt = scenes.slice(0, maxScenes).map((scene: any, i: number) => {
-        let prompt = String(scene.visual || scene.prompt || "");
-        const voiceover = String(scene.text || "");
+        const visual = String(scene.visual || scene.prompt || "");
+        const voiceover = String(scene.text || "").trim();
+
+        // Build prompt: put voiceover FIRST so it doesn't get truncated
+        // Kling v3 supports in-prompt speech with natural language
+        let prompt: string;
         if (voiceover) {
-          prompt += ` The person says: "${voiceover}"`;
+          // Voiceover first, then visual description
+          prompt = `A Chinese young person says: "${voiceover}". ${visual}`;
+        } else {
+          prompt = visual;
         }
-        // Kling limit: 512 chars per scene prompt
+
+        // Kling limit: 512 chars per scene prompt — truncate visual if needed, keep voiceover intact
         if (prompt.length > 510) {
-          prompt = prompt.substring(0, 510);
+          if (voiceover) {
+            // Keep the voiceover part, truncate visual
+            const voiceoverPart = `A Chinese young person says: "${voiceover}". `;
+            const remainingChars = 510 - voiceoverPart.length;
+            prompt = voiceoverPart + visual.substring(0, Math.max(50, remainingChars));
+          } else {
+            prompt = visual.substring(0, 510);
+          }
         }
+
         return {
           index: i + 1,
           prompt,
