@@ -457,16 +457,47 @@ export default function SetupPage() {
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-4">
                 {account.products.length === 0 && (
                   <p className="text-muted-foreground text-center py-8">
-                    暂无产品，点击"添加产品"开始
+                    暂无产品，点击"添加产品"开始。添加后 AI 会自动搜索产品信息和图片。
                   </p>
                 )}
                 {account.products.map((product, i) => (
                   <div key={i} className="border rounded-lg p-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="font-medium">产品 {i + 1}</span>
+                      <div className="flex items-center gap-3 flex-1">
+                        <Input
+                          placeholder="产品名称（如：雪碧无糖）"
+                          value={product.name}
+                          onChange={(e) => updateProduct(i, "name", e.target.value)}
+                          className="max-w-xs"
+                        />
+                        <label className="cursor-pointer shrink-0">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="hidden"
+                            onChange={async (e) => {
+                              const files = e.target.files;
+                              if (!files) return;
+                              for (const file of Array.from(files)) {
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                  const dataUrl = reader.result as string;
+                                  updateProduct(i, "imagePaths", [...product.imagePaths, dataUrl]);
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                              e.target.value = "";
+                            }}
+                          />
+                          <span className="text-xs px-2.5 py-1.5 rounded border hover:bg-muted transition-colors">
+                            上传图片
+                          </span>
+                        </label>
+                      </div>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -476,53 +507,28 @@ export default function SetupPage() {
                         删除
                       </Button>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label>产品名称</Label>
-                        <Input
-                          placeholder="产品名"
-                          value={product.name}
-                          onChange={(e) => updateProduct(i, "name", e.target.value)}
-                        />
+                    {/* Image thumbnails */}
+                    {product.imagePaths.length > 0 && (
+                      <div className="flex gap-2 flex-wrap">
+                        {product.imagePaths.map((img, j) => (
+                          <div key={j} className="relative group">
+                            <img
+                              src={img}
+                              alt={`${product.name} ${j + 1}`}
+                              className="w-16 h-16 object-cover rounded border"
+                            />
+                            <button
+                              onClick={() => {
+                                updateProduct(i, "imagePaths", product.imagePaths.filter((_, k) => k !== j));
+                              }}
+                              className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                      <div className="space-y-1">
-                        <Label>卖点（逗号分隔）</Label>
-                        <Input
-                          placeholder="卖点1, 卖点2, 卖点3"
-                          value={product.sellingPoints.join(", ")}
-                          onChange={(e) =>
-                            updateProduct(
-                              i,
-                              "sellingPoints",
-                              e.target.value.split(",").map((s) => s.trim()).filter(Boolean)
-                            )
-                          }
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <Label>产品描述</Label>
-                      <Textarea
-                        placeholder="详细描述产品特点、适用人群等"
-                        value={product.description}
-                        onChange={(e) => updateProduct(i, "description", e.target.value)}
-                        rows={2}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>产品图片路径（逗号分隔）</Label>
-                      <Input
-                        placeholder="/test-assets/product-front.png, /test-assets/product-side.png"
-                        value={product.imagePaths.join(", ")}
-                        onChange={(e) =>
-                          updateProduct(
-                            i,
-                            "imagePaths",
-                            e.target.value.split(",").map((s) => s.trim()).filter(Boolean)
-                          )
-                        }
-                      />
-                    </div>
+                    )}
                   </div>
                 ))}
               </CardContent>
