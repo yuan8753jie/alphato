@@ -39,6 +39,7 @@ export default function TopicDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [sceneImages, setSceneImages] = useState<Record<string, string>>({});
   const [generatingScene, setGeneratingScene] = useState<string | null>(null);
+  const [showEnglish, setShowEnglish] = useState(false);
   // Per-tab video state
   const [videoStates, setVideoStates] = useState<Record<VariantKey, {
     taskId?: string;
@@ -335,63 +336,98 @@ export default function TopicDetailPage() {
             </Card>
           )}
 
-          {/* Storyboard */}
+          {/* Storyboard table */}
           <div>
-            <h2 className="text-base font-bold mb-3">分镜表</h2>
-            <div className="space-y-3">
-              {activeScript.scenes?.map((scene: Record<string, string | number>, i: number) => {
-                const sn = Number(scene.sceneNumber);
-                const imgKey = `${activeTab}_${sn}`;
-                const img = sceneImages[imgKey];
-                return (
-                  <Card key={i} className="overflow-hidden">
-                    <div className="flex">
-                      <div className="w-24 bg-muted flex flex-col items-center justify-center shrink-0 relative">
-                        {img ? (
-                          <img src={img} alt={`P${sn}`} className="w-full h-full object-cover" />
-                        ) : generatingScene === imgKey ? (
-                          <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <div className="flex flex-col items-center gap-1">
-                            <span className="text-lg font-bold">P{sn}</span>
-                            <span className="text-[10px] text-muted-foreground">{scene.duration}秒</span>
-                            <button
-                              onClick={() => generateSceneImage(imgKey, String(scene.visual))}
-                              disabled={generatingScene !== null}
-                              className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20"
-                            >
-                              生成图
-                            </button>
-                          </div>
-                        )}
-                        {img && <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1 rounded">P{sn}·{scene.duration}s</div>}
-                      </div>
-                      <CardContent className="flex-1 py-3 px-4 space-y-2">
-                        <div>
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[10px] font-semibold text-muted-foreground">画面</span>
-                            <Badge variant="outline" className="text-[9px] h-4">Kling</Badge>
-                          </div>
-                          <div className="rounded-lg bg-slate-950 text-slate-200 p-2.5">
-                            <p className="text-[11px] leading-relaxed font-mono whitespace-pre-wrap">{scene.visual}</p>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <p className="text-[10px] font-semibold text-muted-foreground mb-0.5">音频</p>
-                            <p className="text-xs text-muted-foreground">{scene.audio}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-semibold text-muted-foreground mb-0.5">台词</p>
-                            <p className="text-xs font-medium">{scene.text || <span className="text-muted-foreground italic">（无台词）</span>}</p>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </div>
-                  </Card>
-                );
-              })}
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-bold">分镜表</h2>
+              <button
+                onClick={() => setShowEnglish(!showEnglish)}
+                className="text-xs px-2.5 py-1 rounded-md bg-muted hover:bg-muted/80 transition-colors"
+              >
+                {showEnglish ? "显示中文" : "显示英文原文"}
+              </button>
             </div>
+
+            <div className="rounded-lg border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-muted/50">
+                    <th className="px-3 py-2 text-left w-12">镜号</th>
+                    <th className="px-3 py-2 text-left w-12">秒数</th>
+                    <th className="px-3 py-2 text-left">画面 / 可灵提示词</th>
+                    <th className="px-3 py-2 text-left w-24">音频</th>
+                    <th className="px-3 py-2 text-left w-32">台词</th>
+                    <th className="px-3 py-2 text-left w-16">转场</th>
+                    <th className="px-3 py-2 w-12">图</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {activeScript.scenes?.map((scene: Record<string, string | number>, i: number) => {
+                    const sn = Number(scene.sceneNumber);
+                    const imgKey = `${activeTab}_${sn}`;
+                    const img = sceneImages[imgKey];
+                    const visual = String(scene.visual || "");
+
+                    return (
+                      <tr key={i} className="hover:bg-muted/20">
+                        <td className="px-3 py-2 font-bold text-center">P{sn}</td>
+                        <td className="px-3 py-2 text-center">{scene.duration}s</td>
+                        <td className="px-3 py-2">
+                          {showEnglish ? (
+                            <p className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">{visual}</p>
+                          ) : (
+                            <p className="text-[11px] leading-relaxed whitespace-pre-wrap">
+                              {visual.length > 0 ? visual : "—"}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">{scene.audio || "—"}</td>
+                        <td className="px-3 py-2 font-medium">{scene.text || <span className="text-muted-foreground italic">无</span>}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{scene.transition || "—"}</td>
+                        <td className="px-3 py-2 text-center">
+                          {img ? (
+                            <img src={img} alt={`P${sn}`} className="w-10 h-14 object-cover rounded mx-auto" />
+                          ) : (
+                            <button
+                              onClick={() => generateSceneImage(imgKey, visual)}
+                              disabled={generatingScene !== null}
+                              className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
+                            >
+                              {generatingScene === imgKey ? "..." : "生成"}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Kling actual prompt preview */}
+            <details className="mt-3">
+              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                查看发送给可灵的实际提示词
+              </summary>
+              <div className="mt-2 rounded-lg bg-slate-950 text-slate-200 p-4 space-y-3">
+                {activeScript.scenes?.map((scene: Record<string, string | number>, i: number) => {
+                  const visual = String(scene.visual || "");
+                  const voiceover = String(scene.text || "").trim();
+                  let klingPrompt = visual;
+                  if (voiceover) {
+                    klingPrompt = `A Chinese young person says: "${voiceover}". ${visual}`;
+                  }
+                  if (klingPrompt.length > 510) klingPrompt = klingPrompt.substring(0, 510) + "...";
+
+                  return (
+                    <div key={i}>
+                      <p className="text-[10px] text-slate-400 mb-1">P{scene.sceneNumber} · {scene.duration}s</p>
+                      <p className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">{klingPrompt}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
           </div>
 
           {/* Full text */}
