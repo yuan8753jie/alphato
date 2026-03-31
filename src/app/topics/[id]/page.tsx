@@ -39,10 +39,13 @@ export default function TopicDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [sceneImages, setSceneImages] = useState<Record<string, string>>({});
   const [generatingScene, setGeneratingScene] = useState<string | null>(null);
-  const [videoTaskId, setVideoTaskId] = useState<string | null>(null);
-  const [videoStatus, setVideoStatus] = useState<string | null>(null);
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [videoLoading, setVideoLoading] = useState(false);
+  // Per-tab video state
+  const [videoStates, setVideoStates] = useState<Record<VariantKey, {
+    taskId?: string;
+    status?: string;
+    url?: string;
+    loading: boolean;
+  }>>({} as Record<VariantKey, { taskId?: string; status?: string; url?: string; loading: boolean }>);
 
   useEffect(() => {
     const acc = getAccount();
@@ -111,12 +114,18 @@ export default function TopicDetailPage() {
     finally { setGeneratingScene(null); }
   }
 
+  function updateVideoState(tab: VariantKey, updates: Partial<{ taskId: string; status: string; url: string; loading: boolean }>) {
+    setVideoStates((prev) => ({
+      ...prev,
+      [tab]: { ...prev[tab], ...updates },
+    }));
+  }
+
   async function generateVideo() {
-    const script = scripts[activeTab];
+    const tab = activeTab;
+    const script = scripts[tab];
     if (!script?.scenes) return;
-    setVideoLoading(true);
-    setVideoStatus("提交中...");
-    setVideoUrl(null);
+    updateVideoState(tab, { loading: true, status: "提交中...", url: undefined });
     try {
       const res = await fetch("/api/generate-video", {
         method: "POST",
@@ -125,40 +134,35 @@ export default function TopicDetailPage() {
       });
       const data = await res.json();
       if (data.success && data.task?.taskId) {
-        setVideoTaskId(data.task.taskId);
-        setVideoStatus("已提交，等待生成...");
-        pollVideo(data.task.taskId);
+        updateVideoState(tab, { taskId: data.task.taskId, status: "已提交..." });
+        pollVideo(tab, data.task.taskId);
       } else {
         setError(data.error || "提交失败");
-        setVideoLoading(false);
+        updateVideoState(tab, { loading: false });
       }
     } catch (err) {
       setError(String(err));
-      setVideoLoading(false);
+      updateVideoState(tab, { loading: false });
     }
   }
 
-  async function pollVideo(taskId: string) {
+  async function pollVideo(tab: VariantKey, taskId: string) {
     for (let i = 0; i < 120; i++) {
       await new Promise((r) => setTimeout(r, 5000));
       try {
         const res = await fetch(`/api/video-status?taskId=${taskId}`);
         const data = await res.json();
         if (data.task?.status === "succeed" && data.task.videoUrl) {
-          setVideoUrl(data.task.videoUrl);
-          setVideoStatus("完成");
-          setVideoLoading(false);
+          updateVideoState(tab, { url: data.task.videoUrl, status: "完成", loading: false });
           return;
         } else if (data.task?.status === "failed") {
-          setVideoStatus("失败：" + (data.task.statusMsg || ""));
-          setVideoLoading(false);
+          updateVideoState(tab, { status: "失败：" + (data.task.statusMsg || ""), loading: false });
           return;
         }
-        setVideoStatus(data.task?.status === "processing" ? "生成中..." : "排队中...");
+        updateVideoState(tab, { status: data.task?.status === "processing" ? "生成中..." : "排队中..." });
       } catch { /* retry */ }
     }
-    setVideoStatus("超时");
-    setVideoLoading(false);
+    updateVideoState(tab, { status: "超时", loading: false });
   }
 
   if (!topic || !account) return null;
@@ -200,7 +204,7 @@ export default function TopicDetailPage() {
           return (
             <button
               key={v.key}
-              onClick={() => { setActiveTab(v.key); setVideoUrl(null); setVideoLoading(false); }}
+              onClick={() => setActiveTab(v.key)}
               className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
                 activeTab === v.key
                   ? "border-primary text-foreground"
@@ -344,34 +348,39 @@ export default function TopicDetailPage() {
           )}
 
           {/* Video */}
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm">视频 Demo</CardTitle>
-                <Button onClick={generateVideo} disabled={videoLoading} size="sm" variant={videoUrl ? "outline" : "default"}>
-                  {videoLoading ? videoStatus : videoUrl ? "重新生成" : "生成视频（可灵）"}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {videoUrl ? (
-                <div className="space-y-3">
-                  <video src={videoUrl} controls className="w-full max-w-sm mx-auto rounded-lg shadow-lg" playsInline />
-                  <div className="flex justify-center gap-3">
-                    <a href={videoUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:underline">新窗口 ↗</a>
-                    <a href={videoUrl} download className="text-xs text-muted-foreground hover:underline">下载</a>
+          {(() => {
+            const vs = videoStates[activeTab] || {};
+            return (
+              <Card>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm">视频 Demo</CardTitle>
+                    <Button onClick={generateVideo} disabled={vs.loading} size="sm" variant={vs.url ? "outline" : "default"}>
+                      {vs.loading ? vs.status : vs.url ? "重新生成" : "生成视频（可灵）"}
+                    </Button>
                   </div>
-                </div>
-              ) : videoLoading ? (
-                <div className="text-center py-8">
-                  <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                  <p className="text-sm text-muted-foreground">{videoStatus}</p>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-4">基于当前 tab 的分镜生成视频</p>
-              )}
-            </CardContent>
-          </Card>
+                </CardHeader>
+                <CardContent>
+                  {vs.url ? (
+                    <div className="space-y-3">
+                      <video src={vs.url} controls className="w-full max-w-sm mx-auto rounded-lg shadow-lg" playsInline />
+                      <div className="flex justify-center gap-3">
+                        <a href={vs.url} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:underline">新窗口 ↗</a>
+                        <a href={vs.url} download className="text-xs text-muted-foreground hover:underline">下载</a>
+                      </div>
+                    </div>
+                  ) : vs.loading ? (
+                    <div className="text-center py-8">
+                      <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                      <p className="text-sm text-muted-foreground">{vs.status}</p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">基于当前 tab 的分镜生成视频</p>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
         </div>
       ) : loadingVariants.has(activeTab) ? (
         <div className="text-center py-20">
