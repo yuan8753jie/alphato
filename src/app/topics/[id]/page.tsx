@@ -279,11 +279,21 @@ export default function TopicDetailPage() {
       {/* Script content */}
       {activeScript ? (
         <div className="space-y-6">
-          {/* Creative approach */}
-          {activeScript.creativeApproach && (
-            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
-              <p className="text-xs font-semibold text-amber-800 mb-1">创意手法</p>
-              <p className="text-sm text-amber-900">{activeScript.creativeApproach}</p>
+          {/* Creative concept + approach */}
+          {(activeScript.concept || activeScript.creativeApproach) && (
+            <div className="rounded-lg border overflow-hidden">
+              {activeScript.concept && (
+                <div className="p-4 bg-gradient-to-r from-violet-50 to-blue-50 border-b">
+                  <p className="text-xs font-semibold text-violet-800 mb-1.5">AI 创意概念（Step 1: 自由构思）</p>
+                  <p className="text-sm text-violet-900 leading-relaxed whitespace-pre-wrap">{activeScript.concept}</p>
+                </div>
+              )}
+              {activeScript.creativeApproach && (
+                <div className="p-3 bg-amber-50/50">
+                  <p className="text-xs font-semibold text-amber-800 mb-0.5">创意核心</p>
+                  <p className="text-sm text-amber-900">{activeScript.creativeApproach}</p>
+                </div>
+              )}
             </div>
           )}
 
