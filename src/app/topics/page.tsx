@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ClipboardCheck } from "lucide-react";
-import { getAccount, getTopics, saveTopics, getTrends } from "@/lib/store";
+import { getAccount, getTopics, saveTopics, getTrends, getReviewPersonas, saveReviewPersonas } from "@/lib/store";
 import type { Account, Topic, TopicStatus, TopicType, Trend } from "@/lib/types";
 import { TOPIC_TYPE_LABELS } from "@/lib/types";
 
@@ -59,6 +59,12 @@ export default function TopicsPage() {
     setAccount(acc);
     setTopics(getTopics());
     setTrends(getTrends().trends);
+    // Load persisted review personas
+    const savedPersonas = getReviewPersonas();
+    if (savedPersonas) {
+      setReviewPersonas(savedPersonas.personas);
+      setReviewResearch(savedPersonas.reasoning);
+    }
   }, [router]);
 
   async function generateTopics() {
@@ -94,34 +100,55 @@ export default function TopicsPage() {
     }
   }
 
-  async function reviewTopics() {
+  async function reviewTopics(forceNewPersonas = false) {
     if (!account || topics.length === 0) return;
     setLoading("reviewing");
     setError(null);
     setDrawerOpen(true);
-    setReviewStep("personas");
-    setReviewPersonas([]);
     setReviewResults({});
     setReviewingTopicId(null);
-    setReviewResearch(null);
 
     try {
-      // Step 1: Generate personas
-      const personaRes = await fetch("/api/generate-personas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account }),
-      });
-      const personaData = await personaRes.json();
-      if (!personaData.success || !personaData.personas?.length) {
-        setError(personaData.error || "Persona 生成失败");
-        setReviewStep("idle");
-        setLoading(null);
-        return;
+      // Step 1: Use existing personas or generate new ones
+      const existingPersonas = !forceNewPersonas ? getReviewPersonas() : null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let personas: any[];
+
+      if (existingPersonas?.personas?.length) {
+        // Reuse persisted personas
+        personas = existingPersonas.personas;
+        setReviewPersonas(personas);
+        if (existingPersonas.reasoning) setReviewResearch(existingPersonas.reasoning);
+        setReviewStep("reviewing");
+      } else {
+        // Generate new personas
+        setReviewStep("personas");
+        setReviewPersonas([]);
+        setReviewResearch(null);
+
+        const personaRes = await fetch("/api/generate-personas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account }),
+        });
+        const personaData = await personaRes.json();
+        if (!personaData.success || !personaData.personas?.length) {
+          setError(personaData.error || "Persona 生成失败");
+          setReviewStep("idle");
+          setLoading(null);
+          return;
+        }
+        personas = personaData.personas;
+        setReviewPersonas(personas);
+        if (personaData.research) setReviewResearch(personaData.research);
+
+        // Persist for next time
+        saveReviewPersonas({
+          personas,
+          reasoning: personaData.research,
+          generatedAt: new Date().toISOString(),
+        });
       }
-      const personas = personaData.personas;
-      setReviewPersonas(personas);
-      if (personaData.research) setReviewResearch(personaData.research);
       setReviewStep("reviewing");
 
       // Step 2: Review each topic, one at a time; all personas in parallel per topic
@@ -254,9 +281,19 @@ export default function TopicsPage() {
           )}
           {topics.length > 0 && (
             <>
-              <Button onClick={reviewTopics} disabled={loading !== null} variant="outline" size="sm">
-                {loading === "reviewing" ? "评审中..." : "AI Review"}
+              <Button onClick={() => reviewTopics()} disabled={loading !== null} variant="outline" size="sm">
+                {loading === "reviewing" ? "评审中..." : reviewPersonas.length > 0 ? "AI Review（复用 Persona）" : "AI Review"}
               </Button>
+              {reviewPersonas.length > 0 && (
+                <button
+                  onClick={() => reviewTopics(true)}
+                  disabled={loading !== null}
+                  className="text-[10px] text-muted-foreground hover:text-foreground"
+                  title="重新生成审稿团"
+                >
+                  换一批审稿人
+                </button>
+              )}
               {(reviewStep !== "idle" || Object.keys(reviewResults).length > 0) && (
                 <Button variant="ghost" size="sm" className="px-2" title="查看评审过程" onClick={() => setDrawerOpen(true)}>
                   <ClipboardCheck size={16} />

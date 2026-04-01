@@ -160,10 +160,18 @@ export interface ScriptScene {
 
 // ===== 数据存储 =====
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface ReviewPersonaData {
+  personas: any[];
+  reasoning: any;
+  generatedAt: string;
+}
+
 export interface AppData {
   account: Account | null;
   topics: Topic[];
   scripts: Script[];
   trends: Trend[];
   trendsDate: string | null;
+  reviewPersonas: ReviewPersonaData | null;
 }
