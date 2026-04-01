@@ -46,6 +46,31 @@ export function getTopics(): Topic[] {
   return loadData().topics;
 }
 
+export function updateTopic(topicId: string, updates: Partial<Topic>): void {
+  const data = loadData();
+  const idx = data.topics.findIndex((t) => t.id === topicId);
+  if (idx >= 0) {
+    data.topics[idx] = { ...data.topics[idx], ...updates };
+    saveData(data);
+  }
+}
+
+export function scheduleTopic(topicId: string, date: string): void {
+  updateTopic(topicId, { scheduledDate: date, status: "approved" });
+}
+
+export function unscheduleTopic(topicId: string): void {
+  updateTopic(topicId, { scheduledDate: undefined });
+}
+
+export function getScheduledTopics(): Topic[] {
+  return loadData().topics.filter((t) => t.scheduledDate);
+}
+
+export function getUnscheduledApprovedTopics(): Topic[] {
+  return loadData().topics.filter((t) => t.status === "approved" && !t.scheduledDate);
+}
+
 export function saveScript(script: Script): void {
   const data = loadData();
   const idx = data.scripts.findIndex((s) => s.id === script.id);

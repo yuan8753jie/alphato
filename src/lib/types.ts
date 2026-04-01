@@ -132,9 +132,10 @@ export interface Topic {
   angle: string;
   description: string;
   type: TopicType;
-  relatedTrendIds: string[];   // 关联的热点ID（可多个）
+  relatedTrendIds: string[];
   estimatedAppeal: string;
   status: TopicStatus;
+  scheduledDate?: string;      // YYYY-MM-DD，排入日历的日期
   createdAt: string;
 }
 
