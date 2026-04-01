@@ -18,10 +18,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, scheduled: [] });
     }
 
-    // Sort by review score (highest first), then by type diversity
+    // Sort by review score (highest first) — uses reviewScore persisted on topic
     const scored = candidates.map((t) => ({
       topic: t,
-      score: reviewResults?.[t.id]?.averageScore ?? 0,
+      score: t.reviewScore ?? reviewResults?.[t.id]?.averageScore ?? 0,
     }));
     scored.sort((a, b) => b.score - a.score);
 

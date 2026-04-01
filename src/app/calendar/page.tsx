@@ -63,9 +63,39 @@ function getMonthGrid(year: number, month: number): (Date | null)[][] {
   return weeks;
 }
 
-function getTopicIcon(topic: Topic, scripts: Script[]): string {
+function getTopicStatus(topic: Topic, scripts: Script[]): {
+  icon: string;
+  borderColor: string;
+  scoreBadge: string | null;
+} {
   const hasScript = scripts.some((s) => s.topicId === topic.id);
-  return hasScript ? "📝" : "💡";
+  const score = topic.reviewScore;
+
+  let icon = "💡";
+  if (hasScript) icon = "📝";
+
+  let borderColor = "";
+  let scoreBadge: string | null = null;
+
+  if (score == null) {
+    borderColor = "border-amber-300 bg-amber-50/50";
+    scoreBadge = null; // 未评审
+  } else if (score >= 7) {
+    borderColor = "border-green-300 bg-green-50/50";
+    scoreBadge = `⭐${score}`;
+  } else if (score < 5) {
+    borderColor = "border-red-300 bg-red-50/50";
+    scoreBadge = `⚠️${score}`;
+  } else {
+    scoreBadge = `${score}`;
+  }
+
+  return { icon, borderColor, scoreBadge };
+}
+
+// Keep backward compat for sidebar
+function getTopicIcon(topic: Topic, scripts: Script[]): string {
+  return getTopicStatus(topic, scripts).icon;
 }
 
 export default function CalendarPage() {
@@ -173,28 +203,39 @@ export default function CalendarPage() {
           </span>
         </div>
         <div className="space-y-1">
-          {dayTopics.map((topic) => (
-            <div
-              key={topic.id}
-              className="group rounded border bg-background px-1.5 py-1 text-[10px] leading-tight hover:shadow-sm"
-            >
-              <div className="flex items-start gap-0.5">
-                <span className="shrink-0">{getTopicIcon(topic, scripts)}</span>
-                <span className="font-medium line-clamp-1">{topic.title}</span>
+          {dayTopics.map((topic) => {
+            const st = getTopicStatus(topic, scripts);
+            return (
+              <div
+                key={topic.id}
+                className={`group rounded border px-1.5 py-1 text-[10px] leading-tight hover:shadow-sm ${st.borderColor || "bg-background"}`}
+              >
+                <div className="flex items-start gap-0.5">
+                  <span className="shrink-0">{st.icon}</span>
+                  <span className="font-medium line-clamp-1">{topic.title}</span>
+                </div>
+                <div className="flex items-center justify-between mt-0.5">
+                  <div className="flex items-center gap-1">
+                    <span className={`text-[8px] px-1 rounded ${TYPE_COLORS[topic.type] || "bg-muted"}`}>
+                      {TOPIC_TYPE_LABELS[topic.type] || topic.type}
+                    </span>
+                    {st.scoreBadge && (
+                      <span className="text-[8px]">{st.scoreBadge}</span>
+                    )}
+                    {topic.reviewScore == null && (
+                      <span className="text-[8px] text-amber-600">未评审</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleUnschedule(topic.id)}
+                    className="text-[8px] text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center justify-between mt-0.5">
-                <span className={`text-[8px] px-1 rounded ${TYPE_COLORS[topic.type] || "bg-muted"}`}>
-                  {TOPIC_TYPE_LABELS[topic.type] || topic.type}
-                </span>
-                <button
-                  onClick={() => handleUnschedule(topic.id)}
-                  className="text-[8px] text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );

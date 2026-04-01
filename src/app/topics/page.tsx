@@ -179,6 +179,20 @@ export default function TopicsPage() {
 
       setReviewingTopicId(null);
       setReviewStep("done");
+
+      // Persist review scores into topics (read latest from state via callback)
+      setReviewResults((latestResults) => {
+        const updatedTopics = topics.map((t) => {
+          const result = latestResults[t.id];
+          if (result?.averageScore != null) {
+            return { ...t, reviewScore: result.averageScore };
+          }
+          return t;
+        });
+        setTopics(updatedTopics);
+        saveTopics(updatedTopics);
+        return latestResults;
+      });
     } catch (err) {
       setError("请求失败：" + String(err));
       setReviewStep("idle");

@@ -136,6 +136,7 @@ export interface Topic {
   estimatedAppeal: string;
   status: TopicStatus;
   scheduledDate?: string;      // YYYY-MM-DD，排入日历的日期
+  reviewScore?: number;        // Persona Review 综合评分
   createdAt: string;
 }
 
