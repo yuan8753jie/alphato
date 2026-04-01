@@ -1,4 +1,4 @@
-import { AppData, Account, Topic, Script, Trend, ReviewPersonaData } from "./types";
+import { AppData, Account, Topic, Script, Trend, ReviewPersonaData, ReviewResults } from "./types";
 
 const STORAGE_KEY = "alphato_data";
 
@@ -9,6 +9,7 @@ const defaultData: AppData = {
   trends: [],
   trendsDate: null,
   reviewPersonas: null,
+  reviewResults: null,
 };
 
 export function loadData(): AppData {
@@ -95,6 +96,16 @@ export function saveReviewPersonas(data: ReviewPersonaData): void {
 
 export function getReviewPersonas(): ReviewPersonaData | null {
   return loadData().reviewPersonas || null;
+}
+
+export function saveReviewResults(results: ReviewResults): void {
+  const data = loadData();
+  data.reviewResults = results;
+  saveData(data);
+}
+
+export function getReviewResults(): ReviewResults | null {
+  return loadData().reviewResults || null;
 }
 
 export function saveTrends(trends: Trend[], append = false): void {

@@ -167,6 +167,9 @@ export interface ReviewPersonaData {
   generatedAt: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ReviewResults = Record<string, any>;
+
 export interface AppData {
   account: Account | null;
   topics: Topic[];
@@ -174,4 +177,5 @@ export interface AppData {
   trends: Trend[];
   trendsDate: string | null;
   reviewPersonas: ReviewPersonaData | null;
+  reviewResults: ReviewResults | null;
 }

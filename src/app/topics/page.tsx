@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ClipboardCheck } from "lucide-react";
-import { getAccount, getTopics, saveTopics, getTrends, getReviewPersonas, saveReviewPersonas } from "@/lib/store";
+import { getAccount, getTopics, saveTopics, getTrends, getReviewPersonas, saveReviewPersonas, getReviewResults, saveReviewResults } from "@/lib/store";
 import type { Account, Topic, TopicStatus, TopicType, Trend } from "@/lib/types";
 import { TOPIC_TYPE_LABELS } from "@/lib/types";
 
@@ -59,11 +59,16 @@ export default function TopicsPage() {
     setAccount(acc);
     setTopics(getTopics());
     setTrends(getTrends().trends);
-    // Load persisted review personas
+    // Load persisted review personas + results
     const savedPersonas = getReviewPersonas();
     if (savedPersonas) {
       setReviewPersonas(savedPersonas.personas);
       setReviewResearch(savedPersonas.reasoning);
+    }
+    const savedResults = getReviewResults();
+    if (savedResults && Object.keys(savedResults).length > 0) {
+      setReviewResults(savedResults);
+      setReviewStep("done");
     }
   }, [router]);
 
@@ -188,7 +193,9 @@ export default function TopicsPage() {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const allScores = reviews.flatMap((r: any) => [getScore(r.stop), getScore(r.watch), getScore(r.engage), getScore(r.convert)]);
                 const avg = allScores.length > 0 ? +(allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1) : null;
-                return { ...prev, [topic.id]: { ...existing, personaReviews: reviews, averageScore: avg } };
+                const updated = { ...prev, [topic.id]: { ...existing, personaReviews: reviews, averageScore: avg } };
+                saveReviewResults(updated);
+                return updated;
               });
               return data.review;
             }
