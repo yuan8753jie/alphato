@@ -37,7 +37,8 @@ export default function TopicsPage() {
   const [account, setAccount] = useState<Account | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [trends, setTrends] = useState<Trend[]>([]);
-  const [loading, setLoading] = useState<string | null>(null); // null | "selecting" | "generating"
+  const [loading, setLoading] = useState<string | null>(null); // null | "selecting" | "generating" | "reviewing"
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<TopicType | "all">("all");
   const [sortBy, setSortBy] = useState<"default" | "score">("default");
@@ -73,7 +74,9 @@ export default function TopicsPage() {
   }, [router]);
 
   async function generateTopics() {
-    if (!account || trends.length === 0) return;
+    if (!account || trends.length === 0 || loading) return;
+    const ac = new AbortController();
+    setAbortController(ac);
     setLoading("selecting");
     setError(null);
     setSelectedTrends([]);
@@ -83,6 +86,7 @@ export default function TopicsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ account, trends }),
+        signal: ac.signal,
       });
       const data = await res.json();
 
@@ -106,7 +110,9 @@ export default function TopicsPage() {
   }
 
   async function reviewTopics(forceNewPersonas = false) {
-    if (!account || topics.length === 0) return;
+    if (!account || topics.length === 0 || loading) return;
+    const ac = new AbortController();
+    setAbortController(ac);
     setLoading("reviewing");
     setError(null);
     setDrawerOpen(true);
@@ -235,6 +241,16 @@ export default function TopicsPage() {
     }
   }
 
+  function stopCurrentTask() {
+    if (abortController) {
+      abortController.abort();
+      setAbortController(null);
+    }
+    setLoading(null);
+    setReviewStep((prev) => prev === "idle" ? "idle" : "done");
+    setReviewingTopicId(null);
+  }
+
   function getTopicReview(topicId: string) {
     return reviewResults[topicId] || null;
   }
@@ -272,7 +288,12 @@ export default function TopicsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {trends.length === 0 && (
+          {loading && (
+            <Button onClick={stopCurrentTask} variant="destructive" size="sm">
+              停止
+            </Button>
+          )}
+          {trends.length === 0 && !loading && (
             <Button onClick={() => router.push("/discover")} variant="outline" size="sm">
               先去发现热点 →
             </Button>
@@ -280,9 +301,9 @@ export default function TopicsPage() {
           {trends.length > 0 && (
             <Button onClick={generateTopics} disabled={loading !== null} size="sm">
               {loading === "selecting"
-                ? "AI 正在分析热点相关度..."
+                ? "分析热点中..."
                 : loading === "generating"
-                  ? "AI 正在创作选题..."
+                  ? "生成选题中..."
                   : "生成选题"}
             </Button>
           )}
@@ -291,7 +312,7 @@ export default function TopicsPage() {
               <Button onClick={() => reviewTopics()} disabled={loading !== null} variant="outline" size="sm">
                 {loading === "reviewing" ? "评审中..." : reviewPersonas.length > 0 ? "AI Review（复用 Persona）" : "AI Review"}
               </Button>
-              {reviewPersonas.length > 0 && (
+              {reviewPersonas.length > 0 && !loading && (
                 <button
                   onClick={() => reviewTopics(true)}
                   disabled={loading !== null}
