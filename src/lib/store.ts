@@ -1,4 +1,4 @@
-import { AppData, Account, Topic, Script, Trend, ReviewPersonaData, ReviewResults } from "./types";
+import { AppData, Account, Topic, Script, Trend, ReviewPersonaData, ReviewResults, SelectedTrendsMeta } from "./types";
 
 const STORAGE_KEY = "alphato_data";
 
@@ -132,4 +132,14 @@ export function isTrendsStale(): boolean {
   if (!date) return true;
   const today = new Date().toISOString().split("T")[0];
   return date !== today;
+}
+
+export function saveSelectedTrendsMeta(meta: SelectedTrendsMeta): void {
+  const data = loadData();
+  data.selectedTrendsMeta = meta;
+  saveData(data);
+}
+
+export function getSelectedTrendsMeta(): SelectedTrendsMeta | null {
+  return loadData().selectedTrendsMeta || null;
 }

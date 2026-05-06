@@ -219,13 +219,44 @@ export async function POST(req: NextRequest) {
           .filter((c) => c.web?.uri)
           .map((c) => ({ domain: (c.web?.title || "").toLowerCase(), uri: c.web!.uri! }));
 
+        const usedUris = new Set<string>();
+
         return parseTrends(text).map((t: Record<string, unknown>, i: number) => {
           // Match source domain to grounding chunk domain
           // LLM now returns domains (e.g. "sina.com.cn") instead of Chinese names
           const sourceDomain = String(t.source || "").toLowerCase().trim();
-          const matchedSource = realSources.find((s) =>
+          const trendTitle = String(t.title || "").toLowerCase();
+
+          // Find all grounding chunks matching the source domain
+          const domainMatches = realSources.filter((s) =>
             sourceDomain && (s.domain.includes(sourceDomain) || sourceDomain.includes(s.domain))
           );
+
+          // Among domain matches, prefer one whose title/URI contains keywords from trend title,
+          // and that hasn't been used by a previous trend yet
+          let bestMatch: { domain: string; uri: string } | undefined;
+          if (domainMatches.length === 1) {
+            bestMatch = domainMatches[0];
+          } else if (domainMatches.length > 1) {
+            // Extract title keywords (2+ chars) for matching
+            const keywords = trendTitle.match(/[\u4e00-\u9fff]{2,}|[a-z0-9]{2,}/g) || [];
+            // Score each candidate: +2 for title keyword match, +1 for unused
+            let topScore = -1;
+            for (const candidate of domainMatches) {
+              let score = usedUris.has(candidate.uri) ? 0 : 1;
+              const uriLower = candidate.uri.toLowerCase();
+              const titleLower = candidate.domain;
+              for (const kw of keywords) {
+                if (titleLower.includes(kw) || uriLower.includes(kw)) score += 2;
+              }
+              if (score > topScore) {
+                topScore = score;
+                bestMatch = candidate;
+              }
+            }
+          }
+
+          if (bestMatch) usedUris.add(bestMatch.uri);
 
           return {
             id: `trend_${crypto.randomUUID().slice(0, 8)}_${i}`,
@@ -233,7 +264,7 @@ export async function POST(req: NextRequest) {
             description: String(t.description || ""),
             category: normalizeCategory(t.category, agent.category),
             source: String(t.source || ""),
-            sourceUrl: matchedSource?.uri || undefined,
+            sourceUrl: bestMatch?.uri || undefined,
             heatScore: t.heatScore || 5,
             relevance: String(t.relevance || ""),
             eventDate: t.eventDate ? String(t.eventDate) : undefined,

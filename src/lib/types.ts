@@ -142,12 +142,15 @@ export interface Topic {
 
 // ===== 脚本 =====
 
+export type VideoModel = "kling" | "seedance";
+
 export interface Script {
   id: string;
   topicId: string;
   scenes: ScriptScene[];
   fullText: string;
   createdAt: string;
+  targetModel?: VideoModel;
 }
 
 export interface ScriptScene {
@@ -170,6 +173,20 @@ export interface ReviewPersonaData {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ReviewResults = Record<string, any>;
 
+export interface SelectedTrendItem {
+  originalIndex: number;
+  title: string;
+  relevanceScore: number;
+  reason: string;
+}
+
+export interface SelectedTrendsMeta {
+  selectedTrends: SelectedTrendItem[];
+  trendsPoolSize: number;
+  topicsGenerated: number;
+  generatedAt: string;
+}
+
 export interface AppData {
   account: Account | null;
   topics: Topic[];
@@ -178,4 +195,5 @@ export interface AppData {
   trendsDate: string | null;
   reviewPersonas: ReviewPersonaData | null;
   reviewResults: ReviewResults | null;
+  selectedTrendsMeta?: SelectedTrendsMeta | null;
 }

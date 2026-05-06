@@ -6,8 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getAccount, getTopics, getScripts, saveScript } from "@/lib/store";
-import type { Account, Topic } from "@/lib/types";
+import type { Account, Topic, VideoModel } from "@/lib/types";
 import { TOPIC_TYPE_LABELS } from "@/lib/types";
+import { buildSeedancePrompt } from "@/lib/seedance";
+
+const MODEL_LABELS: Record<VideoModel, string> = {
+  kling: "可灵",
+  seedance: "Seedance 2.0",
+};
 
 const TYPE_COLORS: Record<string, string> = {
   traffic: "bg-red-100 text-red-800",
@@ -40,13 +46,15 @@ export default function TopicDetailPage() {
   const [sceneImages, setSceneImages] = useState<Record<string, string>>({});
   const [generatingScene, setGeneratingScene] = useState<string | null>(null);
   const [showEnglish, setShowEnglish] = useState(false);
+  const [scriptModel, setScriptModel] = useState<VideoModel>("kling");
   // Per-tab video state
   const [videoStates, setVideoStates] = useState<Record<VariantKey, {
     taskId?: string;
     status?: string;
     url?: string;
     loading: boolean;
-  }>>({} as Record<VariantKey, { taskId?: string; status?: string; url?: string; loading: boolean }>);
+    model?: VideoModel;
+  }>>({} as Record<VariantKey, { taskId?: string; status?: string; url?: string; loading: boolean; model?: VideoModel }>);
 
   useEffect(() => {
     const acc = getAccount();
@@ -63,8 +71,16 @@ export default function TopicDetailPage() {
     for (const s of existing) {
       if (s.variant) map[s.variant] = s;
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (Object.keys(map).length > 0) setScripts(map as any);
+    if (Object.keys(map).length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setScripts(map as any);
+      // Restore scriptModel from the first script's targetModel (legacy scripts default to kling)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const firstScript = Object.values(map)[0] as any;
+      if (firstScript?.targetModel === "seedance") {
+        setScriptModel("seedance");
+      }
+    }
   }, [topicId, router]);
 
   async function generateAllVariants() {
@@ -80,7 +96,7 @@ export default function TopicDetailPage() {
       const res = await fetch("/api/generate-script", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account, topic }),
+        body: JSON.stringify({ account, topic, model: scriptModel }),
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -123,7 +139,7 @@ export default function TopicDetailPage() {
     finally { setGeneratingScene(null); }
   }
 
-  function updateVideoState(tab: VariantKey, updates: Partial<{ taskId: string; status: string; url: string; loading: boolean }>) {
+  function updateVideoState(tab: VariantKey, updates: Partial<{ taskId: string; status: string; url: string; loading: boolean; model: VideoModel }>) {
     setVideoStates((prev) => ({
       ...prev,
       [tab]: { ...prev[tab], ...updates },
@@ -135,6 +151,7 @@ export default function TopicDetailPage() {
     const script = scripts[tab];
     if (!script?.scenes) return;
     const isMusic = tab.endsWith("music");
+    const model: VideoModel = videoStates[tab]?.model || "kling";
     updateVideoState(tab, { loading: true, status: "提交视频生成...", url: undefined });
 
     try {
@@ -148,6 +165,7 @@ export default function TopicDetailPage() {
           variant: tab,
           productImage: account?.products?.[0]?.imagePaths?.[0] || undefined,
           productName: account?.products?.[0]?.name || undefined,
+          model,
         }),
       });
       const data = await res.json();
@@ -158,12 +176,13 @@ export default function TopicDetailPage() {
       }
 
       updateVideoState(tab, { taskId: data.task.taskId, status: "视频生成中..." });
-      const videoUrl = await pollVideoUntilDone(tab, data.task.taskId, data.useOmni);
+      const videoUrl = await pollVideoUntilDone(tab, data.task.taskId, data.useOmni, model);
 
       if (!videoUrl) return; // pollVideo already set error state
 
-      // Step 2: If music variant, add BGM via video-to-audio API
-      if (isMusic && videoUrl) {
+      // Step 2: For Kling music variant, add BGM via video-to-audio API.
+      // Seedance 2.0 has native audio generation, so skip the post-processing.
+      if (isMusic && videoUrl && model === "kling") {
         updateVideoState(tab, { status: "正在添加背景音乐..." });
         try {
           const bgmPrompt = script.musicStyle || "Upbeat energetic pop music with strong beats";
@@ -193,11 +212,14 @@ export default function TopicDetailPage() {
     }
   }
 
-  async function pollVideoUntilDone(tab: VariantKey, taskId: string, useOmni?: boolean): Promise<string | null> {
+  async function pollVideoUntilDone(tab: VariantKey, taskId: string, useOmni?: boolean, model: VideoModel = "kling"): Promise<string | null> {
     for (let i = 0; i < 120; i++) {
       await new Promise((r) => setTimeout(r, 5000));
       try {
-        const res = await fetch(`/api/video-status?taskId=${taskId}${useOmni ? "&omni=true" : ""}`);
+        const qs = new URLSearchParams({ taskId });
+        if (useOmni) qs.set("omni", "true");
+        if (model === "seedance") qs.set("model", "seedance");
+        const res = await fetch(`/api/video-status?${qs.toString()}`);
         const data = await res.json();
         if (data.task?.status === "succeed" && data.task.videoUrl) {
           return data.task.videoUrl;
@@ -253,9 +275,44 @@ export default function TopicDetailPage() {
           <h1 className="text-xl font-bold">{topic.title}</h1>
           <p className="text-sm text-muted-foreground mt-1">{topic.angle}</p>
         </div>
-        <Button onClick={generateAllVariants} disabled={isGenerating} size="sm">
-          {isGenerating ? `生成中（${4 - loadingVariants.size}/4）...` : Object.keys(scripts).length > 0 ? "重新生成 4 组" : "生成 4 组脚本"}
-        </Button>
+        <div className="flex items-center gap-3">
+          {/* Script-level model toggle — affects script structure (scene count / duration / prompt rules) */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">视频模型</span>
+            <div className="inline-flex rounded-md border bg-muted p-0.5">
+              {(["kling", "seedance"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setScriptModel(m)}
+                  disabled={isGenerating}
+                  className={`text-xs px-3 py-1 rounded transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                    scriptModel === m ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {MODEL_LABELS[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Button onClick={generateAllVariants} disabled={isGenerating} size="sm">
+            {isGenerating ? `生成中（${4 - loadingVariants.size}/4）...` : Object.keys(scripts).length > 0 ? "重新生成 4 组" : "生成 4 组脚本"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Model rule hint */}
+      <div className="mb-4 p-2.5 rounded-md bg-muted/50 border text-xs text-muted-foreground">
+        {scriptModel === "seedance" ? (
+          <>
+            <span className="font-medium text-foreground">Seedance 2.0：</span>
+            分镜数 / 时长 AI 按内容自由发挥（建议 5~8 分镜、10~12 秒，4~15 秒皆可）· 原生 lip-sync + 音频 · 单 prompt 串联
+          </>
+        ) : (
+          <>
+            <span className="font-medium text-foreground">可灵 Kling v3：</span>
+            4~5 个分镜 · 总 15 秒 · 每分镜 ≤510 字符 · 独立 multi_shot · 台词拼入 visual
+          </>
+        )}
       </div>
 
       {error && (
@@ -407,30 +464,6 @@ export default function TopicDetailPage() {
               </table>
             </div>
 
-            {/* Kling actual prompt preview */}
-            <details className="mt-3">
-              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
-                查看发送给可灵的实际提示词
-              </summary>
-              <div className="mt-2 rounded-lg bg-slate-950 text-slate-200 p-4 space-y-3">
-                {activeScript.scenes?.map((scene: Record<string, string | number>, i: number) => {
-                  const sceneVisual = String(scene.visual || "");
-                  const voiceover = String(scene.text || "").trim();
-                  let klingPrompt = sceneVisual;
-                  if (voiceover) {
-                    klingPrompt = `画面中的人说："${voiceover}"。${sceneVisual}`;
-                  }
-                  if (klingPrompt.length > 510) klingPrompt = klingPrompt.substring(0, 510) + "...";
-
-                  return (
-                    <div key={i}>
-                      <p className="text-[10px] text-slate-400 mb-1">P{scene.sceneNumber} · {scene.duration}s</p>
-                      <p className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">{klingPrompt}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </details>
           </div>
 
           {/* Full text */}
@@ -455,18 +488,23 @@ export default function TopicDetailPage() {
 
           {/* Video */}
           {(() => {
-            const vs = videoStates[activeTab] || {};
+            const vs = videoStates[activeTab] || { loading: false };
+            const scriptTargetModel: VideoModel = activeScript?.targetModel || "kling";
+            // Default video model = script's target model. User can override.
+            const model: VideoModel = vs.model || scriptTargetModel;
+            const modelMismatch = model !== scriptTargetModel;
+            const isVoiceover = activeTab.endsWith("voiceover");
             return (
               <Card>
                 <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3">
                     <CardTitle className="text-sm">视频 Demo</CardTitle>
                     <Button onClick={generateVideo} disabled={vs.loading} size="sm" variant={vs.url ? "outline" : "default"}>
-                      {vs.loading ? vs.status : vs.url ? "重新生成" : "生成视频（可灵）"}
+                      {vs.loading ? vs.status : vs.url ? "重新生成" : `生成视频（${MODEL_LABELS[model]}）`}
                     </Button>
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
                   {vs.url ? (
                     <div className="space-y-3">
                       <video src={vs.url} controls className="w-full max-w-sm mx-auto rounded-lg shadow-lg" playsInline />
@@ -483,6 +521,72 @@ export default function TopicDetailPage() {
                   ) : (
                     <p className="text-sm text-muted-foreground text-center py-4">基于当前 tab 的分镜生成视频</p>
                   )}
+
+                  {/* Model toggle — default follows script's target model; override to try a different model */}
+                  <div className="pt-3 border-t space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">视频模型（默认跟随脚本：{MODEL_LABELS[scriptTargetModel]}）</span>
+                      <div className="inline-flex rounded-md border bg-muted p-0.5">
+                        {(["kling", "seedance"] as const).map((m) => (
+                          <button
+                            key={m}
+                            onClick={() => updateVideoState(activeTab, { model: m })}
+                            disabled={vs.loading}
+                            className={`text-xs px-3 py-1 rounded transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                              model === m ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            {MODEL_LABELS[m]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {modelMismatch && (
+                      <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                        ⚠ 当前脚本是为 <b>{MODEL_LABELS[scriptTargetModel]}</b> 优化的（分镜数、时长、提示词风格都按它的规则生成），用 <b>{MODEL_LABELS[model]}</b> 生成可能效果不理想。建议回到顶部切换模型后重新生成脚本。
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Dynamic prompt preview based on selected model */}
+                  <details>
+                    <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                      查看发送给{MODEL_LABELS[model]}的实际提示词
+                    </summary>
+                    <div className="mt-2 rounded-lg bg-slate-950 text-slate-200 p-4 space-y-3">
+                      {model === "seedance" ? (() => {
+                        const { prompt, totalDuration } = buildSeedancePrompt({
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          scenes: (activeScript.scenes || []) as any,
+                          isVoiceover,
+                          productName: account?.products?.[0]?.name,
+                        });
+                        return (
+                          <>
+                            <p className="text-[10px] text-slate-400">单 prompt 串联多镜头 · 总时长 {totalDuration}s · {isVoiceover ? "原生口播 lip-sync" : "无口播"}</p>
+                            <p className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">{prompt}</p>
+                          </>
+                        );
+                      })() : (
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        activeScript.scenes?.map((scene: Record<string, string | number>, i: number) => {
+                          const sceneVisual = String(scene.visual || "");
+                          const voiceover = String(scene.text || "").trim();
+                          let klingPrompt = sceneVisual;
+                          if (voiceover) {
+                            klingPrompt = `画面中的人说："${voiceover}"。${sceneVisual}`;
+                          }
+                          if (klingPrompt.length > 510) klingPrompt = klingPrompt.substring(0, 510) + "...";
+                          return (
+                            <div key={i}>
+                              <p className="text-[10px] text-slate-400 mb-1">P{scene.sceneNumber} · {scene.duration}s</p>
+                              <p className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">{klingPrompt}</p>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </details>
                 </CardContent>
               </Card>
             );

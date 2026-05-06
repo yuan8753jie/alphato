@@ -16,6 +16,7 @@ import {
   FlaskConical,
   FileText,
   ChevronDown,
+  Video,
 } from "lucide-react";
 import type { Account } from "@/lib/types";
 
@@ -34,6 +35,12 @@ const NAV_SECTIONS = [
     items: [
       { href: "/assets", label: "素材库", icon: FolderOpen },
       { href: "/analytics", label: "数据", icon: BarChart3 },
+    ],
+  },
+  {
+    title: "实验",
+    items: [
+      { href: "/playground/seedance", label: "Seedance 对比", icon: Video },
     ],
   },
   {

@@ -8,8 +8,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { ClipboardCheck } from "lucide-react";
-import { getAccount, getTopics, saveTopics, getTrends, getReviewPersonas, saveReviewPersonas, getReviewResults, saveReviewResults } from "@/lib/store";
-import type { Account, Topic, TopicStatus, TopicType, Trend } from "@/lib/types";
+import { getAccount, getTopics, saveTopics, getTrends, getReviewPersonas, saveReviewPersonas, getReviewResults, saveReviewResults, saveSelectedTrendsMeta, getSelectedTrendsMeta } from "@/lib/store";
+import type { Account, Topic, TopicStatus, TopicType, Trend, SelectedTrendsMeta } from "@/lib/types";
 import { TOPIC_TYPE_LABELS } from "@/lib/types";
 
 const STATUS_LABEL: Record<TopicStatus, string> = {
@@ -25,12 +25,7 @@ const TYPE_COLORS: Record<TopicType, string> = {
   persona: "bg-purple-100 text-purple-800",
 };
 
-interface SelectedTrend {
-  originalIndex: number;
-  title: string;
-  relevanceScore: number;
-  reason: string;
-}
+type SelectedTrend = SelectedTrendsMeta["selectedTrends"][number];
 
 export default function TopicsPage() {
   const router = useRouter();
@@ -43,6 +38,7 @@ export default function TopicsPage() {
   const [filterType, setFilterType] = useState<TopicType | "all">("all");
   const [sortBy, setSortBy] = useState<"default" | "score">("default");
   const [selectedTrends, setSelectedTrends] = useState<SelectedTrend[]>([]);
+  const [selectedTrendsMeta, setSelectedTrendsMetaState] = useState<SelectedTrendsMeta | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [reviewPersonas, setReviewPersonas] = useState<any[]>([]);
   // reviewResults: { [topicId]: { personaReviews: [...], averageScore, status } }
@@ -60,6 +56,12 @@ export default function TopicsPage() {
     setAccount(acc);
     setTopics(getTopics());
     setTrends(getTrends().trends);
+    // Load persisted Phase 1 selection
+    const savedMeta = getSelectedTrendsMeta();
+    if (savedMeta) {
+      setSelectedTrendsMetaState(savedMeta);
+      setSelectedTrends(savedMeta.selectedTrends);
+    }
     // Load persisted review personas + results
     const savedPersonas = getReviewPersonas();
     if (savedPersonas) {
@@ -99,6 +101,16 @@ export default function TopicsPage() {
         const newTopics = [...data.topics, ...topics];
         setTopics(newTopics);
         saveTopics(newTopics);
+
+        // Persist Phase 1 selection + generation metadata
+        const meta: SelectedTrendsMeta = {
+          selectedTrends: data.selectedTrends || [],
+          trendsPoolSize: trends.length,
+          topicsGenerated: data.topics.length,
+          generatedAt: new Date().toISOString(),
+        };
+        setSelectedTrendsMetaState(meta);
+        saveSelectedTrendsMeta(meta);
       } else {
         setError(data.error || "选题生成失败");
       }
@@ -286,6 +298,26 @@ export default function TopicsPage() {
               </span>
             )}
           </p>
+          {selectedTrendsMeta && (() => {
+            const poolChanged = trends.length !== selectedTrendsMeta.trendsPoolSize;
+            const genDate = selectedTrendsMeta.generatedAt.split("T")[0];
+            return (
+              <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1.5 flex-wrap">
+                <span>基于 {selectedTrendsMeta.trendsPoolSize} 条热点</span>
+                <span>·</span>
+                <span>AI 精选 {selectedTrendsMeta.selectedTrends.length} 条</span>
+                <span>·</span>
+                <span>生成 {selectedTrendsMeta.topicsGenerated} 个选题</span>
+                <span>·</span>
+                <span>更新于 {genDate}</span>
+                {poolChanged && trends.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px]">
+                    热点池已更新到 {trends.length} 条，建议重新生成
+                  </span>
+                )}
+              </p>
+            );
+          })()}
         </div>
         <div className="flex items-center gap-2">
           {loading && (
@@ -603,28 +635,31 @@ export default function TopicsPage() {
         <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded-md text-sm">{error}</div>
       )}
 
-      {/* Phase 1 result: Selected trends */}
+      {/* Phase 1 result: AI-selected trends (persisted across sessions) */}
       {selectedTrends.length > 0 && (
         <Card className="mb-6">
-          <CardContent className="py-4">
-            <h3 className="text-sm font-semibold mb-3">
-              AI 从 {trends.length} 条热点中精选了 {selectedTrends.length} 条
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {selectedTrends.map((st, i) => (
-                <div
-                  key={i}
-                  className="text-xs px-2.5 py-1.5 rounded-lg border bg-muted/50 max-w-xs"
-                  title={st.reason}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-medium truncate">{st.title}</span>
-                    <span className="text-[10px] text-muted-foreground shrink-0">{st.relevanceScore}/10</span>
+          <CardContent className="py-3">
+            <details>
+              <summary className="cursor-pointer text-sm font-medium flex items-center gap-2 hover:text-foreground text-muted-foreground">
+                <span>AI 精选的 {selectedTrends.length} 条热点（从 {selectedTrendsMeta?.trendsPoolSize ?? trends.length} 条中筛出）</span>
+                <span className="text-xs">▼</span>
+              </summary>
+              <div className="flex flex-wrap gap-2 mt-3">
+                {selectedTrends.map((st, i) => (
+                  <div
+                    key={i}
+                    className="text-xs px-2.5 py-1.5 rounded-lg border bg-muted/50 max-w-xs"
+                    title={st.reason}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium truncate">{st.title}</span>
+                      <span className="text-[10px] text-muted-foreground shrink-0">{st.relevanceScore}/10</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">{st.reason}</p>
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">{st.reason}</p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </details>
           </CardContent>
         </Card>
       )}
