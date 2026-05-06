@@ -4,13 +4,13 @@ import { useState, useRef, DragEvent, ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { UploadCloud, X, Image as ImageIcon, Video as VideoIcon } from "lucide-react";
-import type { SeedanceProvider, SeedanceVariant } from "@/lib/seedance";
+import type { SeedanceVariant } from "@/lib/seedance";
 
 interface RefAsset {
   dataUrl: string;
   name: string;
-  size: number; // bytes
-  type: string; // mime
+  size: number;
+  type: string;
 }
 
 const MAX_IMAGES = 9;
@@ -27,30 +27,22 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-type ProviderKey = `${SeedanceProvider}_${SeedanceVariant}`;
-
-interface ProviderDef {
-  key: ProviderKey;
-  provider: SeedanceProvider;
+interface VariantDef {
   variant: SeedanceVariant;
   label: string;
 }
 
-const PROVIDERS: ProviderDef[] = [
-  { key: "tezign_standard", provider: "tezign", variant: "standard", label: "Tezign SD2 API" },
-  { key: "tezign_fast", provider: "tezign", variant: "fast", label: "Tezign SD2 Fast API" },
-  { key: "shanhai_standard", provider: "shanhai", variant: "standard", label: "Shanhai SD2 API" },
-  { key: "shanhai_fast", provider: "shanhai", variant: "fast", label: "Shanhai SD2 Fast API" },
+const VARIANTS: VariantDef[] = [
+  { variant: "standard", label: "Seedance 2.0" },
+  { variant: "fast", label: "Seedance 2.0 Fast" },
 ];
 
-// Inline --resolution/--ratio/--duration flags are stripped server-side to avoid
-// conflicts with the JSON fields (the dropdowns are the source of truth).
 const DEFAULT_PROMPT = `一位穿浅色衬衫的中国年轻女生，坐在窗边的咖啡桌前。她拿起冰镇汽水瓶，对着镜头自然地笑着喝了一口，气泡在瓶口轻轻冒出。午后柔和的自然光从侧面洒在她的脸上，背景是略微虚化的城市街景。整体电影感、日常 Vlog 风格、画面稳定。`;
 
 type RunStatus = "idle" | "submitting" | "polling" | "done" | "failed";
 
 interface RunResult {
-  providerKey: ProviderKey;
+  variant: SeedanceVariant;
   label: string;
   status: RunStatus;
   taskId?: string;
@@ -174,14 +166,12 @@ export default function SeedancePlaygroundPage() {
   const [ratio, setRatio] = useState("9:16");
   const [duration, setDuration] = useState(5);
   const [generateAudio, setGenerateAudio] = useState(true);
-  const [seed, setSeed] = useState<string>(""); // empty = random (non-reproducible)
+  const [seed, setSeed] = useState<string>("");
   const [refImages, setRefImages] = useState<RefAsset[]>([]);
   const [refVideos, setRefVideos] = useState<RefAsset[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<ProviderKey>>(
-    new Set(["tezign_standard", "shanhai_standard"])
-  );
-  const [results, setResults] = useState<Record<ProviderKey, RunResult>>({} as Record<ProviderKey, RunResult>);
+  const [selected, setSelected] = useState<Set<SeedanceVariant>>(new Set(["standard"]));
+  const [results, setResults] = useState<Record<SeedanceVariant, RunResult>>({} as Record<SeedanceVariant, RunResult>);
   const [running, setRunning] = useState(false);
 
   async function addReferenceFiles(files: FileList, kind: "image" | "video") {
@@ -226,26 +216,25 @@ export default function SeedancePlaygroundPage() {
     else setRefVideos((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function toggleProvider(key: ProviderKey) {
+  function toggleVariant(variant: SeedanceVariant) {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(variant)) next.delete(variant);
+      else next.add(variant);
       return next;
     });
   }
 
-  async function pollUntilDone(def: ProviderDef, taskId: string, startedAt: number) {
+  async function pollUntilDone(def: VariantDef, taskId: string, startedAt: number) {
     for (let i = 0; i < 120; i++) {
       await new Promise((r) => setTimeout(r, 4000));
       try {
-        const qs = new URLSearchParams({ taskId, provider: def.provider });
-        const res = await fetch(`/api/playground/seedance-status?${qs.toString()}`);
+        const res = await fetch(`/api/playground/seedance-status?taskId=${encodeURIComponent(taskId)}`);
         const data = await res.json();
         if (!data.success) {
           setResults((prev) => ({
             ...prev,
-            [def.key]: { ...prev[def.key], status: "failed", errorMsg: data.error || "status error" },
+            [def.variant]: { ...prev[def.variant], status: "failed", errorMsg: data.error || "status error" },
           }));
           return;
         }
@@ -254,8 +243,8 @@ export default function SeedancePlaygroundPage() {
         if (t.status === "succeeded" && t.videoUrl) {
           setResults((prev) => ({
             ...prev,
-            [def.key]: {
-              ...prev[def.key],
+            [def.variant]: {
+              ...prev[def.variant],
               status: "done",
               videoUrl: t.videoUrl,
               progressMsg: "完成",
@@ -267,33 +256,33 @@ export default function SeedancePlaygroundPage() {
         if (t.status === "failed" || t.status === "expired" || t.status === "cancelled") {
           setResults((prev) => ({
             ...prev,
-            [def.key]: { ...prev[def.key], status: "failed", errorMsg: t.statusMsg || t.status, elapsedMs: elapsed },
+            [def.variant]: { ...prev[def.variant], status: "failed", errorMsg: t.statusMsg || t.status, elapsedMs: elapsed },
           }));
           return;
         }
         setResults((prev) => ({
           ...prev,
-          [def.key]: { ...prev[def.key], status: "polling", progressMsg: `${t.status} · ${Math.round(elapsed / 1000)}s`, elapsedMs: elapsed },
+          [def.variant]: { ...prev[def.variant], status: "polling", progressMsg: `${t.status} · ${Math.round(elapsed / 1000)}s`, elapsedMs: elapsed },
         }));
       } catch (e) {
         setResults((prev) => ({
           ...prev,
-          [def.key]: { ...prev[def.key], progressMsg: `轮询错误: ${String(e)}` },
+          [def.variant]: { ...prev[def.variant], progressMsg: `轮询错误: ${String(e)}` },
         }));
       }
     }
     setResults((prev) => ({
       ...prev,
-      [def.key]: { ...prev[def.key], status: "failed", errorMsg: "超时" },
+      [def.variant]: { ...prev[def.variant], status: "failed", errorMsg: "超时" },
     }));
   }
 
-  async function runOne(def: ProviderDef) {
+  async function runOne(def: VariantDef) {
     const startedAt = Date.now();
     setResults((prev) => ({
       ...prev,
-      [def.key]: {
-        providerKey: def.key,
+      [def.variant]: {
+        variant: def.variant,
         label: def.label,
         status: "submitting",
         progressMsg: "提交中...",
@@ -306,7 +295,6 @@ export default function SeedancePlaygroundPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
-          provider: def.provider,
           variant: def.variant,
           resolution,
           ratio,
@@ -321,29 +309,28 @@ export default function SeedancePlaygroundPage() {
       if (!data.success || !data.task?.taskId) {
         setResults((prev) => ({
           ...prev,
-          [def.key]: { ...prev[def.key], status: "failed", errorMsg: data.error || "提交失败" },
+          [def.variant]: { ...prev[def.variant], status: "failed", errorMsg: data.error || "提交失败" },
         }));
         return;
       }
       setResults((prev) => ({
         ...prev,
-        [def.key]: { ...prev[def.key], status: "polling", taskId: data.task.taskId, progressMsg: "排队中..." },
+        [def.variant]: { ...prev[def.variant], status: "polling", taskId: data.task.taskId, progressMsg: "排队中..." },
       }));
       await pollUntilDone(def, data.task.taskId, startedAt);
     } catch (e) {
       setResults((prev) => ({
         ...prev,
-        [def.key]: { ...prev[def.key], status: "failed", errorMsg: String(e) },
+        [def.variant]: { ...prev[def.variant], status: "failed", errorMsg: String(e) },
       }));
     }
   }
 
   async function runAll() {
     if (selected.size === 0) return;
-    // Clear previous results so stale errors don't confuse the current run
-    setResults({} as Record<ProviderKey, RunResult>);
+    setResults({} as Record<SeedanceVariant, RunResult>);
     setRunning(true);
-    const defs = PROVIDERS.filter((p) => selected.has(p.key));
+    const defs = VARIANTS.filter((v) => selected.has(v.variant));
     await Promise.all(defs.map(runOne));
     setRunning(false);
   }
@@ -353,14 +340,13 @@ export default function SeedancePlaygroundPage() {
       <div className="mb-6">
         <h1 className="text-xl font-bold">Seedance 对比测试</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          同一 prompt 并发发给多家 provider，横向对比视频质量 · 仅用于测试，不影响正式生产流
+          同一 prompt 并发发给 Seedance 2.0 标准版 / Fast 版，对比效果 · 仅用于测试，不影响正式生产流
         </p>
       </div>
 
-      {/* Prompt input */}
       <Card className="mb-4">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Prompt（发给所有选中的 provider 的完全一致）</CardTitle>
+          <CardTitle className="text-sm">Prompt</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-xs text-muted-foreground mb-2">
@@ -376,7 +362,6 @@ export default function SeedancePlaygroundPage() {
         </CardContent>
       </Card>
 
-      {/* Reference assets */}
       <Card className="mb-4">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">
@@ -413,7 +398,6 @@ export default function SeedancePlaygroundPage() {
         </CardContent>
       </Card>
 
-      {/* Params */}
       <Card className="mb-4">
         <CardContent className="py-4">
           <div className="flex items-center gap-6 flex-wrap">
@@ -433,7 +417,7 @@ export default function SeedancePlaygroundPage() {
                 {resolution === "480p" && "最省钱"}
                 {resolution === "1080p" && (
                   <span className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                    两家账户均未开通，大概率 400 报错
+                    账户未开通，大概率 400 报错
                   </span>
                 )}
               </span>
@@ -498,27 +482,26 @@ export default function SeedancePlaygroundPage() {
         </CardContent>
       </Card>
 
-      {/* Provider selection */}
       <Card className="mb-4">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">选择 Provider（勾选后并发生成）</CardTitle>
+          <CardTitle className="text-sm">选择 Seedance 2.0 变体</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-2">
-            {PROVIDERS.map((p) => (
+            {VARIANTS.map((v) => (
               <label
-                key={p.key}
+                key={v.variant}
                 className={`flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors ${
-                  selected.has(p.key) ? "bg-primary/5 border-primary" : "bg-background hover:bg-muted"
+                  selected.has(v.variant) ? "bg-primary/5 border-primary" : "bg-background hover:bg-muted"
                 }`}
               >
                 <input
                   type="checkbox"
-                  checked={selected.has(p.key)}
-                  onChange={() => toggleProvider(p.key)}
+                  checked={selected.has(v.variant)}
+                  onChange={() => toggleVariant(v.variant)}
                   disabled={running}
                 />
-                <span className="text-sm font-medium">{p.label}</span>
+                <span className="text-sm font-medium">{v.label}</span>
               </label>
             ))}
           </div>
@@ -527,26 +510,25 @@ export default function SeedancePlaygroundPage() {
 
       <div className="flex items-center gap-3 mb-6">
         <Button onClick={runAll} disabled={running || selected.size === 0} size="lg">
-          {running ? `生成中（${Object.values(results).filter((r) => r.status === "done").length}/${selected.size} 完成）...` : `并发生成（${selected.size} 个 provider）`}
+          {running ? `生成中（${Object.values(results).filter((r) => r.status === "done").length}/${selected.size} 完成）...` : `并发生成（${selected.size} 个变体）`}
         </Button>
         {Object.keys(results).length > 0 && !running && (
-          <Button onClick={() => setResults({} as Record<ProviderKey, RunResult>)} variant="outline" size="sm">
+          <Button onClick={() => setResults({} as Record<SeedanceVariant, RunResult>)} variant="outline" size="sm">
             清空结果
           </Button>
         )}
       </div>
 
-      {/* Results grid */}
       {Object.keys(results).length > 0 && (
         <div className="grid grid-cols-2 gap-4">
-          {PROVIDERS.filter((p) => results[p.key]).map((p) => {
-            const r = results[p.key];
+          {VARIANTS.filter((v) => results[v.variant]).map((v) => {
+            const r = results[v.variant];
             const borderClass =
               r.status === "done" ? "border-green-500"
               : r.status === "failed" ? "border-red-500"
               : "border-amber-500";
             return (
-              <Card key={p.key} className={`${borderClass} border-2`}>
+              <Card key={v.variant} className={`${borderClass} border-2`}>
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-sm">{r.label}</CardTitle>
@@ -558,12 +540,7 @@ export default function SeedancePlaygroundPage() {
                 <CardContent>
                   {r.status === "done" && r.videoUrl ? (
                     <div className="space-y-2">
-                      <video
-                        src={r.videoUrl}
-                        controls
-                        className="w-full rounded bg-black"
-                        playsInline
-                      />
+                      <video src={r.videoUrl} controls className="w-full rounded bg-black" playsInline />
                       <div className="flex justify-between text-[11px]">
                         <a href={r.videoUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground underline">
                           新窗口 ↗

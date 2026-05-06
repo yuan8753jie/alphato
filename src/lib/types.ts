@@ -142,15 +142,12 @@ export interface Topic {
 
 // ===== 脚本 =====
 
-export type VideoModel = "kling" | "seedance";
-
 export interface Script {
   id: string;
   topicId: string;
   scenes: ScriptScene[];
   fullText: string;
   createdAt: string;
-  targetModel?: VideoModel;
 }
 
 export interface ScriptScene {
