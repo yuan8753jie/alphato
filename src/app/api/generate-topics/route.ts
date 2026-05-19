@@ -13,13 +13,22 @@ function formatTrendList(trends: Trend[]): string {
 
 export async function POST(req: NextRequest) {
   try {
-    const { account, trends } = (await req.json()) as {
+    const { account, trends, focusProductId } = (await req.json()) as {
       account: Account;
       trends: Trend[];
+      focusProductId?: string;
     };
 
-    const brandContext = buildBrandContext(account);
+    const focusProduct = focusProductId
+      ? account.products.find((p) => p.id === focusProductId)
+      : null;
+
+    const brandContext = buildBrandContext(account, focusProduct?.id);
     const pName = getPlatformName(account.platform);
+
+    // 给 LLM 看到的产品名→后端按名字映射回 id
+    const productNameList = account.products.map((p) => p.name).filter(Boolean);
+    const productIdByName = new Map(account.products.map((p) => [p.name, p.id]));
 
     // ============================================================
     // Phase 1: Trend Relevance Analysis — select the best 15~20
@@ -84,6 +93,21 @@ ${formatTrendList(trends)}
     // Phase 2: Topic Generation — create topics from selected trends
     // ============================================================
 
+    // 产品绑定指令：focus 状态下强制绑定单产品；否则让 LLM 按选题内容自己挑
+    const productBindingInstruction = focusProduct
+      ? `## 产品绑定（必须遵守）
+本批选题全部围绕 **${focusProduct.name}** 这一款产品。每个选题的 \`productNames\` 字段必须严格设为：["${focusProduct.name}"]。
+不要写其他产品。`
+      : productNameList.length > 0
+        ? `## 产品绑定
+品牌有以下产品：${productNameList.join("、")}
+对每个选题，判断它最适合主推哪几款产品：
+- 选题天然只关一款产品（如某款产品的使用场景） → productNames 只填那一款
+- 选题适合多款产品（如对比、合集） → productNames 填多款
+- 选题不关具体产品（如品牌故事、行业洞察） → productNames 为空数组 []
+productNames 里的名字必须严格来自品牌产品列表，逐字一致。`
+        : "";
+
     const phase2Data = await geminiRequest("gemini-2.5-flash", {
       contents: [{
         parts: [{
@@ -94,6 +118,8 @@ ${brandContext}
 
 ## 精选热点（已按品牌相关度筛选）
 ${selectedTrendsText}
+
+${productBindingInstruction}
 
 ## 任务
 基于以上精选热点，为"${account.brand.name}"的${pName}账号策划 **8 个内容选题**，严格按以下配比：
@@ -118,6 +144,7 @@ ${selectedTrendsText}
     "angle": "切入角度说明",
     "description": "3-5句内容概要，描述这条视频具体怎么做",
     "basedOnTrends": ["基于的精选热点标题1", "精选热点标题2"],
+    "productNames": ["最相关的产品名"],
     "estimatedAppeal": "目标受众为什么会想看"
   }
 ]`,
@@ -141,17 +168,29 @@ ${selectedTrendsText}
       });
     }
 
-    const formattedTopics = topics.map((t, i) => ({
-      id: `topic_${Date.now()}_${i}`,
-      title: String(t.title || ""),
-      type: String(t.type || "traffic"),
-      angle: String(t.angle || ""),
-      description: String(t.description || ""),
-      relatedTrendIds: Array.isArray(t.basedOnTrends) ? t.basedOnTrends : [],
-      estimatedAppeal: String(t.estimatedAppeal || ""),
-      status: "pending" as const,
-      createdAt: new Date().toISOString(),
-    }));
+    const formattedTopics = topics.map((t, i) => {
+      // 名字 → id 映射；focus 模式强制写成 focusProduct
+      let productIds: string[] = [];
+      if (focusProduct) {
+        productIds = [focusProduct.id];
+      } else if (Array.isArray(t.productNames)) {
+        productIds = (t.productNames as unknown[])
+          .map((n) => productIdByName.get(String(n)))
+          .filter((id): id is string => Boolean(id));
+      }
+      return {
+        id: `topic_${Date.now()}_${i}`,
+        title: String(t.title || ""),
+        type: String(t.type || "traffic"),
+        angle: String(t.angle || ""),
+        description: String(t.description || ""),
+        relatedTrendIds: Array.isArray(t.basedOnTrends) ? t.basedOnTrends : [],
+        productIds,
+        estimatedAppeal: String(t.estimatedAppeal || ""),
+        status: "pending" as const,
+        createdAt: new Date().toISOString(),
+      };
+    });
 
     return NextResponse.json({
       success: true,

@@ -32,6 +32,8 @@ export default function TopicDetailPage() {
 
   const [account, setAccount] = useState<Account | null>(null);
   const [topic, setTopic] = useState<Topic | null>(null);
+  // 选定用于本次脚本生成的产品 id。空字符串 = 不指定（通用）
+  const [scriptProductId, setScriptProductId] = useState<string>("");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [scripts, setScripts] = useState<Record<VariantKey, any>>({} as Record<VariantKey, any>);
   const [loadingVariants, setLoadingVariants] = useState<Set<VariantKey>>(new Set());
@@ -56,6 +58,12 @@ export default function TopicDetailPage() {
     if (!found) { router.push("/topics"); return; }
     setTopic(found);
 
+    // 初始化产品选择：优先 topic 绑定的第一个，否则品牌第一个产品，否则空（通用）
+    const initialProductId = found.productIds?.[0]
+      || acc.products[0]?.id
+      || "";
+    setScriptProductId(initialProductId);
+
     const existing = getScripts().filter((s) => s.topicId === topicId);
     const map: Record<string, unknown> = {};
     for (const s of existing) {
@@ -79,7 +87,11 @@ export default function TopicDetailPage() {
       const res = await fetch("/api/generate-script", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account, topic }),
+        body: JSON.stringify({
+          account,
+          topic,
+          productId: scriptProductId || undefined,
+        }),
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -206,9 +218,33 @@ export default function TopicDetailPage() {
           <h1 className="text-xl font-bold">{topic.title}</h1>
           <p className="text-sm text-muted-foreground mt-1">{topic.angle}</p>
         </div>
-        <Button onClick={generateAllVariants} disabled={isGenerating} size="sm">
-          {isGenerating ? `生成中（${4 - loadingVariants.size}/4）...` : Object.keys(scripts).length > 0 ? "重新生成 4 组" : "生成 4 组脚本"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {account.products.length > 0 && (
+            <div className="flex flex-col gap-0.5 items-end">
+              <label className="text-[10px] text-muted-foreground">脚本主推产品</label>
+              <select
+                value={scriptProductId}
+                onChange={(e) => setScriptProductId(e.target.value)}
+                disabled={isGenerating}
+                data-testid="script-product-select"
+                className="h-8 text-xs rounded-md border border-input bg-transparent px-2 cursor-pointer"
+              >
+                {account.products.map((p) => {
+                  const isTopicBound = topic.productIds?.includes(p.id);
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {p.name}{isTopicBound ? " ★" : ""}
+                    </option>
+                  );
+                })}
+                <option value="">通用（不指定产品）</option>
+              </select>
+            </div>
+          )}
+          <Button onClick={generateAllVariants} disabled={isGenerating} size="sm">
+            {isGenerating ? `生成中（${4 - loadingVariants.size}/4）...` : Object.keys(scripts).length > 0 ? "重新生成 4 组" : "生成 4 组脚本"}
+          </Button>
+        </div>
       </div>
 
       {/* Seedance 2.0 rule hint */}

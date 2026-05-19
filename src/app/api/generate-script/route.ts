@@ -121,13 +121,17 @@ ${SEEDANCE_TECHNICAL_RULES}
 
 export async function POST(req: NextRequest) {
   try {
-    const { account, topic } = (await req.json()) as {
+    const { account, topic, productId } = (await req.json()) as {
       account: Account;
       topic: Topic;
+      productId?: string;
     };
 
+    // 优先用 request 传来的 productId；没传就 fallback 到 topic 上的第一个绑定产品
+    const focusProductId = productId || topic.productIds?.[0];
+
     const platformName = getPlatformName(account.platform);
-    const brandContext = buildBrandContext(account);
+    const brandContext = buildBrandContext(account, focusProductId);
 
     // ===== Step 1: Free creative ideation =====
     const ideationData = await geminiRequest("gemini-2.5-flash", {
@@ -160,6 +164,7 @@ export async function POST(req: NextRequest) {
           return {
             id: `script_v${v.variation_id}_${Date.now()}`,
             topicId: topic.id,
+            productId: focusProductId,
             variant: v.variation_id === 1 ? "free-voiceover"
               : v.variation_id === 2 ? "free-music"
               : v.variation_id === 3 ? "creative-voiceover"

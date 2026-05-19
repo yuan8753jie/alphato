@@ -36,6 +36,8 @@ export default function TopicsPage() {
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<TopicType | "all">("all");
+  // 产品筛选：null = 全部, "" = 通用（无绑定）, string = 具体产品 id
+  const [filterProduct, setFilterProduct] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<"default" | "score">("default");
   const [selectedTrends, setSelectedTrends] = useState<SelectedTrend[]>([]);
   const [selectedTrendsMeta, setSelectedTrendsMetaState] = useState<SelectedTrendsMeta | null>(null);
@@ -84,10 +86,15 @@ export default function TopicsPage() {
     setSelectedTrends([]);
 
     try {
+      // filterProduct 控制本次生成的产品聚焦：
+      //   null  → 不聚焦，AI 自己按选题挑产品
+      //   ""    → 通用选题，不绑任何产品（不传 focusProductId）
+      //   id    → 全部选题都为该产品生成
+      const focusProductId = filterProduct && filterProduct !== "" ? filterProduct : undefined;
       const res = await fetch("/api/generate-topics", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account, trends }),
+        body: JSON.stringify({ account, trends, focusProductId }),
         signal: ac.signal,
       });
       const data = await res.json();
@@ -275,14 +282,33 @@ export default function TopicsPage() {
 
   if (!account) return null;
 
-  const filteredTopics = filterType === "all" ? topics : topics.filter((t) => t.type === filterType);
+  const filteredByType = filterType === "all" ? topics : topics.filter((t) => t.type === filterType);
+  const filteredByProduct = filterProduct === null
+    ? filteredByType
+    : filterProduct === ""
+      ? filteredByType.filter((t) => !t.productIds || t.productIds.length === 0)
+      : filteredByType.filter((t) => t.productIds?.includes(filterProduct));
   const filtered = sortBy === "score"
-    ? [...filteredTopics].sort((a, b) => {
+    ? [...filteredByProduct].sort((a, b) => {
         const scoreA = reviewResults[a.id]?.averageScore ?? -1;
         const scoreB = reviewResults[b.id]?.averageScore ?? -1;
         return scoreB - scoreA;
       })
-    : filteredTopics;
+    : filteredByProduct;
+
+  // 产品筛选条所需统计
+  const productCounts = new Map<string, number>();
+  let genericCount = 0;
+  for (const t of topics) {
+    if (!t.productIds || t.productIds.length === 0) {
+      genericCount++;
+    } else {
+      for (const pid of t.productIds) {
+        productCounts.set(pid, (productCounts.get(pid) || 0) + 1);
+      }
+    }
+  }
+  const productNameById = new Map(account.products.map((p) => [p.id, p.name]));
 
   return (
     <div>
@@ -330,15 +356,25 @@ export default function TopicsPage() {
               先去发现热点 →
             </Button>
           )}
-          {trends.length > 0 && (
-            <Button onClick={generateTopics} disabled={loading !== null} size="sm">
-              {loading === "selecting"
-                ? "分析热点中..."
-                : loading === "generating"
-                  ? "生成选题中..."
-                  : "生成选题"}
-            </Button>
-          )}
+          {trends.length > 0 && (() => {
+            const focusName = filterProduct && filterProduct !== ""
+              ? productNameById.get(filterProduct)
+              : null;
+            const generateLabel = loading === "selecting"
+              ? "分析热点中..."
+              : loading === "generating"
+                ? "生成选题中..."
+                : focusName
+                  ? `为「${focusName}」生成选题`
+                  : filterProduct === ""
+                    ? "生成通用选题"
+                    : "生成选题";
+            return (
+              <Button onClick={generateTopics} disabled={loading !== null} size="sm">
+                {generateLabel}
+              </Button>
+            );
+          })()}
           {topics.length > 0 && (
             <>
               <Button onClick={() => reviewTopics()} disabled={loading !== null} variant="outline" size="sm">
@@ -667,21 +703,59 @@ export default function TopicsPage() {
       {/* Topic cards */}
       {topics.length > 0 ? (
         <div className="space-y-4">
+          {/* Product filter — 仅当品牌有产品时显示 */}
+          {account.products.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap" data-testid="product-filter-row">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mr-1">产品</span>
+              <button
+                onClick={() => setFilterProduct(null)}
+                className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterProduct === null ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+                data-testid="product-chip-all"
+              >
+                全部 ({topics.length})
+              </button>
+              {genericCount > 0 && (
+                <button
+                  onClick={() => setFilterProduct("")}
+                  className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterProduct === "" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+                  data-testid="product-chip-generic"
+                >
+                  通用 ({genericCount})
+                </button>
+              )}
+              {account.products.map((p) => {
+                const count = productCounts.get(p.id) || 0;
+                if (count === 0 && filterProduct !== p.id) return null;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => setFilterProduct(p.id)}
+                    className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterProduct === p.id ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+                    data-testid={`product-chip-${p.id}`}
+                  >
+                    {p.name} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* Type filter */}
           <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mr-1">类型</span>
             <button
               onClick={() => setFilterType("all")}
-              className={`text-xs px-2.5 py-1 rounded-md transition-colors ${filterType === "all" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+              className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterType === "all" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
             >
-              全部 ({topics.length})
+              全部 ({filteredByProduct.length})
             </button>
             {(["traffic", "trust", "conversion", "persona"] as TopicType[]).map((type) => {
-              const count = topics.filter((t) => t.type === type).length;
+              const count = filteredByProduct.filter((t) => t.type === type).length;
               return count > 0 ? (
                 <button
                   key={type}
                   onClick={() => setFilterType(type)}
-                  className={`text-xs px-2.5 py-1 rounded-md transition-colors ${filterType === type ? TYPE_COLORS[type] + " font-medium" : "bg-muted hover:bg-muted/80"}`}
+                  className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterType === type ? TYPE_COLORS[type] + " font-medium" : "bg-muted hover:bg-muted/80"}`}
                 >
                   {TOPIC_TYPE_LABELS[type]} ({count})
                 </button>
@@ -690,7 +764,7 @@ export default function TopicsPage() {
             {Object.keys(reviewResults).length > 0 && (
               <button
                 onClick={() => setSortBy(sortBy === "score" ? "default" : "score")}
-                className={`text-xs px-2.5 py-1 rounded-md transition-colors ml-auto ${sortBy === "score" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+                className={`text-xs px-2.5 py-1 rounded-md transition-colors ml-auto cursor-pointer ${sortBy === "score" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
               >
                 {sortBy === "score" ? "按评分排序 ✓" : "按评分排序"}
               </button>
@@ -709,6 +783,36 @@ export default function TopicsPage() {
                       <Badge variant={STATUS_VARIANT[topic.status]} className="text-[10px] h-4 px-1.5">
                         {STATUS_LABEL[topic.status]}
                       </Badge>
+                      {/* 产品标签 */}
+                      {account.products.length > 0 && (() => {
+                        const ids = topic.productIds || [];
+                        if (ids.length === 0) {
+                          return (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-slate-100 text-slate-600" title="未绑定具体产品">
+                              通用
+                            </span>
+                          );
+                        }
+                        const names = ids
+                          .map((id) => productNameById.get(id))
+                          .filter(Boolean) as string[];
+                        const shown = names.slice(0, 2);
+                        const extra = names.length - shown.length;
+                        return (
+                          <>
+                            {shown.map((n, i) => (
+                              <span key={i} className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-indigo-100 text-indigo-700">
+                                {n}
+                              </span>
+                            ))}
+                            {extra > 0 && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-indigo-50 text-indigo-600">
+                                +{extra}
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                     {/* Review status badge */}
                     {(() => {

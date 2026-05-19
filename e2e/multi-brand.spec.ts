@@ -32,6 +32,18 @@ test.describe("多品牌数据层", () => {
     // 等待页面加载完成（useEffect 执行）
     await expect(page.locator("h1")).toContainText("工作台");
 
+    // 等迁移落盘
+    await page.waitForFunction(() => {
+      const raw = localStorage.getItem("alphato_data");
+      if (!raw) return false;
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed.accounts);
+      } catch {
+        return false;
+      }
+    });
+
     const migrated = await page.evaluate(() => {
       const raw = localStorage.getItem("alphato_data");
       return raw ? JSON.parse(raw) : null;
@@ -462,5 +474,245 @@ test.describe("阶段3A: 产品 id 迁移", () => {
     expect(products.length).toBe(1);
     expect(products[0].id).toBeTruthy();
     expect(products[0].name).toBe("雪碧无糖");
+  });
+});
+
+test.describe("阶段3B: Topic ↔ Product 绑定", () => {
+  async function seedHonor(page: import("@playwright/test").Page) {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "honor",
+              name: "荣耀官号",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀手机", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [
+                { id: "p-400", name: "荣耀400", description: "", sellingPoints: [], imagePaths: [], links: [] },
+                { id: "p-v5", name: "荣耀V5", description: "", sellingPoints: [], imagePaths: [], links: [] },
+                { id: "p-500", name: "荣耀500", description: "", sellingPoints: [], imagePaths: [], links: [] },
+              ],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [
+                { id: "t1", title: "荣耀400 选题A", angle: "", description: "", type: "traffic", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: ["p-400"], createdAt: "2026-01-01" },
+                { id: "t2", title: "荣耀400 选题B", angle: "", description: "", type: "trust", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: ["p-400"], createdAt: "2026-01-01" },
+                { id: "t3", title: "V5 折叠测评", angle: "", description: "", type: "conversion", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: ["p-v5"], createdAt: "2026-01-01" },
+                { id: "t4", title: "全系对比", angle: "", description: "", type: "trust", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: ["p-400", "p-v5", "p-500"], createdAt: "2026-01-01" },
+                { id: "t5", title: "品牌故事", angle: "", description: "", type: "persona", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: [], createdAt: "2026-01-01" },
+              ],
+              scripts: [],
+              trends: [
+                { id: "tr1", title: "fake trend", description: "", category: "platform_hot", section: "global", source: "x", heatScore: 5, relevance: "", fetchedAt: "2026-01-01" },
+              ],
+              trendsDate: "2026-01-01",
+              reviewPersonas: null,
+              reviewResults: null,
+            },
+          ],
+          activeAccountId: "honor",
+        })
+      );
+    });
+    await page.reload();
+  }
+
+  test("产品筛选行显示且统计正确", async ({ page }) => {
+    await seedHonor(page);
+    await page.goto("/topics");
+
+    const row = page.getByTestId("product-filter-row");
+    await expect(row).toBeVisible();
+    await expect(row.getByTestId("product-chip-all")).toContainText("全部 (5)");
+    await expect(row.getByTestId("product-chip-generic")).toContainText("通用 (1)");
+    // 荣耀400 在 t1/t2/t4 中出现 = 3
+    await expect(row.getByTestId("product-chip-p-400")).toContainText("荣耀400 (3)");
+    // V5 在 t3/t4 = 2
+    await expect(row.getByTestId("product-chip-p-v5")).toContainText("荣耀V5 (2)");
+    // 500 仅在 t4 = 1
+    await expect(row.getByTestId("product-chip-p-500")).toContainText("荣耀500 (1)");
+  });
+
+  test("点击产品 chip 过滤卡片", async ({ page }) => {
+    await seedHonor(page);
+    await page.goto("/topics");
+
+    await page.getByTestId("product-chip-p-v5").click();
+    await expect(page.getByText("V5 折叠测评")).toBeVisible();
+    await expect(page.getByText("全系对比")).toBeVisible(); // t4 也含 V5
+    await expect(page.getByText("荣耀400 选题A")).not.toBeVisible();
+    await expect(page.getByText("品牌故事")).not.toBeVisible();
+  });
+
+  test("点击通用 chip 只显示无产品绑定", async ({ page }) => {
+    await seedHonor(page);
+    await page.goto("/topics");
+
+    await page.getByTestId("product-chip-generic").click();
+    await expect(page.getByText("品牌故事")).toBeVisible();
+    await expect(page.getByText("荣耀400 选题A")).not.toBeVisible();
+    await expect(page.getByText("V5 折叠测评")).not.toBeVisible();
+  });
+
+  test("topic 卡片显示产品标签和通用标记", async ({ page }) => {
+    await seedHonor(page);
+    await page.goto("/topics");
+
+    const t1 = page.locator("text=荣耀400 选题A").locator("xpath=ancestor::*[contains(@class, 'p-4')]").first();
+    await expect(t1.locator("text=荣耀400").first()).toBeVisible();
+
+    const t5 = page.locator("text=品牌故事").locator("xpath=ancestor::*[contains(@class, 'p-4')]").first();
+    await expect(t5.getByText("通用", { exact: true })).toBeVisible();
+
+    // 全系对比绑了 3 个产品：显示前 2 + "+1"
+    const t4 = page.locator("text=全系对比").locator("xpath=ancestor::*[contains(@class, 'p-4')]").first();
+    await expect(t4.getByText("+1")).toBeVisible();
+  });
+
+  test("生成按钮根据筛选状态改变文案", async ({ page }) => {
+    await seedHonor(page);
+    await page.goto("/topics");
+
+    // 默认是"全部"
+    await expect(page.getByRole("button", { name: /^生成选题$/ })).toBeVisible();
+
+    await page.getByTestId("product-chip-p-400").click();
+    await expect(page.getByRole("button", { name: /为「荣耀400」生成选题/ })).toBeVisible();
+
+    await page.getByTestId("product-chip-generic").click();
+    await expect(page.getByRole("button", { name: /生成通用选题/ })).toBeVisible();
+  });
+
+  test("生成请求带上 focusProductId（mock API）", async ({ page }) => {
+    await seedHonor(page);
+
+    let capturedBody: { focusProductId?: string } | null = null;
+    await page.route("/api/generate-topics", async (route) => {
+      capturedBody = await route.request().postDataJSON();
+      // 返回伪造响应避免真打 LLM
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          topics: [],
+          selectedTrends: [],
+        }),
+      });
+    });
+
+    await page.goto("/topics");
+    await page.getByTestId("product-chip-p-v5").click();
+    await page.getByRole("button", { name: /为「荣耀V5」生成选题/ }).click();
+
+    await expect.poll(() => capturedBody?.focusProductId).toBe("p-v5");
+  });
+});
+
+test.describe("阶段3C: Script ↔ Product 绑定", () => {
+  async function seedHonorForScript(page: import("@playwright/test").Page) {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "honor",
+              name: "荣耀官号",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀手机", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [
+                { id: "p-400", name: "荣耀400", description: "", sellingPoints: [], imagePaths: [], links: [] },
+                { id: "p-v5", name: "荣耀V5", description: "", sellingPoints: [], imagePaths: [], links: [] },
+              ],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [
+                { id: "topic-v5", title: "V5 折叠测评", angle: "", description: "", type: "conversion", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: ["p-v5"], createdAt: "2026-01-01" },
+                { id: "topic-generic", title: "品牌故事", angle: "", description: "", type: "persona", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: [], createdAt: "2026-01-01" },
+              ],
+              scripts: [],
+              trends: [],
+              trendsDate: null,
+              reviewPersonas: null,
+              reviewResults: null,
+            },
+          ],
+          activeAccountId: "honor",
+        })
+      );
+    });
+  }
+
+  test("topic 详情页显示产品选择器", async ({ page }) => {
+    await seedHonorForScript(page);
+    await page.goto("/topics/topic-v5");
+
+    const select = page.getByTestId("script-product-select");
+    await expect(select).toBeVisible();
+    // V5 是 topic 绑定的，应被默认选中
+    await expect(select).toHaveValue("p-v5");
+  });
+
+  test("topic 没绑定产品时选择器 fallback 到首个产品", async ({ page }) => {
+    await seedHonorForScript(page);
+    await page.goto("/topics/topic-generic");
+
+    const select = page.getByTestId("script-product-select");
+    await expect(select).toBeVisible();
+    await expect(select).toHaveValue("p-400");
+  });
+
+  test("生成脚本请求带上选中的 productId", async ({ page }) => {
+    await seedHonorForScript(page);
+
+    let capturedBody: { productId?: string } | null = null;
+    await page.route("/api/generate-script", async (route) => {
+      capturedBody = await route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          scripts: [],
+        }),
+      });
+    });
+
+    await page.goto("/topics/topic-v5");
+    // 切到 400 看是否覆盖了 topic 推荐的 V5
+    await page.getByTestId("script-product-select").selectOption("p-400");
+    await page.getByRole("button", { name: /生成 4 组脚本/ }).click();
+
+    await expect.poll(() => capturedBody?.productId).toBe("p-400");
+  });
+
+  test("选「通用」时不传 productId", async ({ page }) => {
+    await seedHonorForScript(page);
+
+    let capturedBody: { productId?: string } | null = null;
+    await page.route("/api/generate-script", async (route) => {
+      capturedBody = await route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, scripts: [] }),
+      });
+    });
+
+    await page.goto("/topics/topic-v5");
+    await page.getByTestId("script-product-select").selectOption(""); // 通用
+    await page.getByRole("button", { name: /生成 4 组脚本/ }).click();
+
+    await expect.poll(() => capturedBody !== null).toBe(true);
+    expect(capturedBody?.productId).toBeUndefined();
   });
 });
