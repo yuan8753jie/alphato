@@ -3,21 +3,71 @@ import { AppData, Account, Topic, Script, Trend, ReviewPersonaData, ReviewResult
 const STORAGE_KEY = "alphato_data";
 
 const defaultData: AppData = {
-  account: null,
-  topics: [],
-  scripts: [],
-  trends: [],
-  trendsDate: null,
-  reviewPersonas: null,
-  reviewResults: null,
+  accounts: [],
+  activeAccountId: null,
 };
+
+function genId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `acc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function migrate(raw: any): AppData {
+  if (!raw || typeof raw !== "object") return defaultData;
+
+  // New shape — return as-is (with safety defaults)
+  if (Array.isArray(raw.accounts)) {
+    return {
+      accounts: raw.accounts,
+      activeAccountId: raw.activeAccountId ?? (raw.accounts[0]?.id ?? null),
+    };
+  }
+
+  // Old shape — has 'account' (possibly null) + top-level workspace
+  if ("account" in raw) {
+    if (!raw.account) {
+      return defaultData;
+    }
+    const id = raw.account.id || genId();
+    const account: Account = {
+      id,
+      name: raw.account.name || "",
+      platform: raw.account.platform || "douyin",
+      accountUrl: raw.account.accountUrl || "",
+      brand: raw.account.brand || { name: "", tone: "", rules: [], industry: "" },
+      brandMaterials: raw.account.brandMaterials || [],
+      products: raw.account.products || [],
+      personas: raw.account.personas || [],
+      benchmarkAccounts: raw.account.benchmarkAccounts || [],
+      topics: raw.topics || [],
+      scripts: raw.scripts || [],
+      trends: raw.trends || [],
+      trendsDate: raw.trendsDate || null,
+      reviewPersonas: raw.reviewPersonas || null,
+      reviewResults: raw.reviewResults || null,
+      selectedTrendsMeta: raw.selectedTrendsMeta || null,
+    };
+    return { accounts: [account], activeAccountId: id };
+  }
+
+  return defaultData;
+}
 
 export function loadData(): AppData {
   if (typeof window === "undefined") return defaultData;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultData;
-    return JSON.parse(raw) as AppData;
+    const parsed = JSON.parse(raw);
+    const migrated = migrate(parsed);
+    // Persist migration so subsequent loads are cheap
+    if (!Array.isArray(parsed.accounts)) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+    }
+    return migrated;
   } catch {
     return defaultData;
   }
@@ -28,33 +78,129 @@ export function saveData(data: AppData): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
-export function saveAccount(account: Account): void {
+// ===== Account management =====
+
+export function listAccounts(): Account[] {
+  return loadData().accounts;
+}
+
+export function getActiveAccountId(): string | null {
+  return loadData().activeAccountId;
+}
+
+export function setActiveAccountId(id: string): void {
   const data = loadData();
-  data.account = account;
+  if (!data.accounts.some((a) => a.id === id)) return;
+  data.activeAccountId = id;
   saveData(data);
 }
 
 export function getAccount(): Account | null {
-  return loadData().account;
+  const data = loadData();
+  return data.accounts.find((a) => a.id === data.activeAccountId) || null;
 }
 
-export function saveTopics(topics: Topic[]): void {
+function emptyWorkspace(): Pick<Account, "topics" | "scripts" | "trends" | "trendsDate" | "reviewPersonas" | "reviewResults" | "selectedTrendsMeta"> {
+  return {
+    topics: [],
+    scripts: [],
+    trends: [],
+    trendsDate: null,
+    reviewPersonas: null,
+    reviewResults: null,
+    selectedTrendsMeta: null,
+  };
+}
+
+export function createAccount(seed: Partial<Account>): Account {
   const data = loadData();
-  data.topics = topics;
+  const id = seed.id || genId();
+  const newAccount: Account = {
+    id,
+    name: seed.name || "",
+    platform: seed.platform || "douyin",
+    accountUrl: seed.accountUrl || "",
+    brand: seed.brand || { name: "", tone: "", rules: [], industry: "" },
+    brandMaterials: seed.brandMaterials || [],
+    products: seed.products || [],
+    personas: seed.personas || [],
+    benchmarkAccounts: seed.benchmarkAccounts || [],
+    ...emptyWorkspace(),
+  };
+  data.accounts.push(newAccount);
+  data.activeAccountId = id;
+  saveData(data);
+  return newAccount;
+}
+
+export function deleteAccount(id: string): void {
+  const data = loadData();
+  data.accounts = data.accounts.filter((a) => a.id !== id);
+  if (data.activeAccountId === id) {
+    data.activeAccountId = data.accounts[0]?.id ?? null;
+  }
   saveData(data);
 }
 
+// Upsert active account — preserves id + workspace data when updating.
+// Used by /setup and /settings pages that don't know about ids.
+export function saveAccount(account: Account): void {
+  const data = loadData();
+  const targetId = account.id || data.activeAccountId;
+  const existingIdx = targetId ? data.accounts.findIndex((a) => a.id === targetId) : -1;
+
+  if (existingIdx >= 0) {
+    const existing = data.accounts[existingIdx];
+    data.accounts[existingIdx] = {
+      ...account,
+      id: existing.id,
+      topics: existing.topics,
+      scripts: existing.scripts,
+      trends: existing.trends,
+      trendsDate: existing.trendsDate,
+      reviewPersonas: existing.reviewPersonas,
+      reviewResults: existing.reviewResults,
+      selectedTrendsMeta: existing.selectedTrendsMeta,
+    };
+    saveData(data);
+  } else {
+    const id = account.id || genId();
+    data.accounts.push({
+      ...account,
+      id,
+      ...emptyWorkspace(),
+    });
+    data.activeAccountId = id;
+    saveData(data);
+  }
+}
+
+// ===== Workspace data (scoped to active account) =====
+
+function updateActiveAccount(updater: (a: Account) => Account): void {
+  const data = loadData();
+  const idx = data.accounts.findIndex((a) => a.id === data.activeAccountId);
+  if (idx < 0) return;
+  data.accounts[idx] = updater(data.accounts[idx]);
+  saveData(data);
+}
+
+export function saveTopics(topics: Topic[]): void {
+  updateActiveAccount((a) => ({ ...a, topics }));
+}
+
 export function getTopics(): Topic[] {
-  return loadData().topics;
+  return getAccount()?.topics ?? [];
 }
 
 export function updateTopic(topicId: string, updates: Partial<Topic>): void {
-  const data = loadData();
-  const idx = data.topics.findIndex((t) => t.id === topicId);
-  if (idx >= 0) {
-    data.topics[idx] = { ...data.topics[idx], ...updates };
-    saveData(data);
-  }
+  updateActiveAccount((a) => {
+    const idx = a.topics.findIndex((t) => t.id === topicId);
+    if (idx < 0) return a;
+    const topics = [...a.topics];
+    topics[idx] = { ...topics[idx], ...updates };
+    return { ...a, topics };
+  });
 }
 
 export function scheduleTopic(topicId: string, date: string): void {
@@ -66,65 +212,67 @@ export function unscheduleTopic(topicId: string): void {
 }
 
 export function getScheduledTopics(): Topic[] {
-  return loadData().topics.filter((t) => t.scheduledDate);
+  return getTopics().filter((t) => t.scheduledDate);
 }
 
 export function getUnscheduledApprovedTopics(): Topic[] {
-  return loadData().topics.filter((t) => t.status === "approved" && !t.scheduledDate);
+  return getTopics().filter((t) => t.status === "approved" && !t.scheduledDate);
 }
 
 export function saveScript(script: Script): void {
-  const data = loadData();
-  const idx = data.scripts.findIndex((s) => s.id === script.id);
-  if (idx >= 0) {
-    data.scripts[idx] = script;
-  } else {
-    data.scripts.push(script);
-  }
-  saveData(data);
+  updateActiveAccount((a) => {
+    const idx = a.scripts.findIndex((s) => s.id === script.id);
+    const scripts = [...a.scripts];
+    if (idx >= 0) {
+      scripts[idx] = script;
+    } else {
+      scripts.push(script);
+    }
+    return { ...a, scripts };
+  });
 }
 
 export function getScripts(): Script[] {
-  return loadData().scripts;
+  return getAccount()?.scripts ?? [];
 }
 
 export function saveReviewPersonas(data: ReviewPersonaData): void {
-  const appData = loadData();
-  appData.reviewPersonas = data;
-  saveData(appData);
+  updateActiveAccount((a) => ({ ...a, reviewPersonas: data }));
 }
 
 export function getReviewPersonas(): ReviewPersonaData | null {
-  return loadData().reviewPersonas || null;
+  return getAccount()?.reviewPersonas ?? null;
 }
 
 export function saveReviewResults(results: ReviewResults): void {
-  const data = loadData();
-  data.reviewResults = results;
-  saveData(data);
+  updateActiveAccount((a) => ({ ...a, reviewResults: results }));
 }
 
 export function getReviewResults(): ReviewResults | null {
-  return loadData().reviewResults || null;
+  return getAccount()?.reviewResults ?? null;
 }
 
 export function saveTrends(trends: Trend[], append = false): void {
-  const data = loadData();
-  if (append) {
-    // Deduplicate by title
-    const existingTitles = new Set(data.trends.map((t) => t.title));
-    const newTrends = trends.filter((t) => !existingTitles.has(t.title));
-    data.trends = [...data.trends, ...newTrends];
-  } else {
-    data.trends = trends;
-  }
-  data.trendsDate = new Date().toISOString().split("T")[0];
-  saveData(data);
+  updateActiveAccount((a) => {
+    let next: Trend[];
+    if (append) {
+      const existingTitles = new Set(a.trends.map((t) => t.title));
+      const newOnes = trends.filter((t) => !existingTitles.has(t.title));
+      next = [...a.trends, ...newOnes];
+    } else {
+      next = trends;
+    }
+    return {
+      ...a,
+      trends: next,
+      trendsDate: new Date().toISOString().split("T")[0],
+    };
+  });
 }
 
 export function getTrends(): { trends: Trend[]; date: string | null } {
-  const data = loadData();
-  return { trends: data.trends || [], date: data.trendsDate || null };
+  const a = getAccount();
+  return { trends: a?.trends ?? [], date: a?.trendsDate ?? null };
 }
 
 export function isTrendsStale(): boolean {
@@ -135,11 +283,9 @@ export function isTrendsStale(): boolean {
 }
 
 export function saveSelectedTrendsMeta(meta: SelectedTrendsMeta): void {
-  const data = loadData();
-  data.selectedTrendsMeta = meta;
-  saveData(data);
+  updateActiveAccount((a) => ({ ...a, selectedTrendsMeta: meta }));
 }
 
 export function getSelectedTrendsMeta(): SelectedTrendsMeta | null {
-  return loadData().selectedTrendsMeta || null;
+  return getAccount()?.selectedTrendsMeta ?? null;
 }

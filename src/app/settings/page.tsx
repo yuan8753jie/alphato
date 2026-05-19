@@ -15,6 +15,7 @@ import type { Account, Product, Persona, BenchmarkAccount, BrandMaterial, Materi
 import { MATERIAL_PURPOSE_LABELS } from "@/lib/types";
 
 const emptyAccount: Account = {
+  id: "",
   name: "",
   platform: "douyin",
   accountUrl: "",
@@ -23,6 +24,13 @@ const emptyAccount: Account = {
   products: [],
   personas: [],
   benchmarkAccounts: [],
+  topics: [],
+  scripts: [],
+  trends: [],
+  trendsDate: null,
+  reviewPersonas: null,
+  reviewResults: null,
+  selectedTrendsMeta: null,
 };
 
 export default function SetupPage() {

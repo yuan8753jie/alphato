@@ -51,6 +51,7 @@ export interface Brand {
 }
 
 export interface Account {
+  id: string;
   name: string;
   platform: "douyin" | "tiktok" | "xiaohongshu" | "instagram" | "kuaishou" | "wechat" | "youtube" | "bilibili";
   accountUrl: string;
@@ -59,6 +60,14 @@ export interface Account {
   products: Product[];
   personas: Persona[];
   benchmarkAccounts: BenchmarkAccount[];
+
+  topics: Topic[];
+  scripts: Script[];
+  trends: Trend[];
+  trendsDate: string | null;
+  reviewPersonas: ReviewPersonaData | null;
+  reviewResults: ReviewResults | null;
+  selectedTrendsMeta?: SelectedTrendsMeta | null;
 }
 
 // ===== 热点池 =====
@@ -185,12 +194,6 @@ export interface SelectedTrendsMeta {
 }
 
 export interface AppData {
-  account: Account | null;
-  topics: Topic[];
-  scripts: Script[];
-  trends: Trend[];
-  trendsDate: string | null;
-  reviewPersonas: ReviewPersonaData | null;
-  reviewResults: ReviewResults | null;
-  selectedTrendsMeta?: SelectedTrendsMeta | null;
+  accounts: Account[];
+  activeAccountId: string | null;
 }
