@@ -172,3 +172,165 @@ test.describe("多品牌数据层", () => {
     await expect(page.getByText("还没有配置账号")).toBeVisible();
   });
 });
+
+test.describe("阶段2: 品牌切换器", () => {
+  async function seedTwoAccounts(page: import("@playwright/test").Page) {
+    // 先 goto 拿到 origin，再 evaluate 注入；不用 addInitScript 否则 reload 会复位
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "sprite-id",
+              name: "雪碧官号",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "雪碧", tone: "活泼", rules: [], industry: "饮料" },
+              brandMaterials: [],
+              products: [],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [{ id: "t-sprite", title: "雪碧专属选题", angle: "", description: "", type: "traffic", relatedTrendIds: [], estimatedAppeal: "", status: "pending", createdAt: "2026-01-01" }],
+              scripts: [],
+              trends: [],
+              trendsDate: null,
+              reviewPersonas: null,
+              reviewResults: null,
+            },
+            {
+              id: "honor-id",
+              name: "荣耀官号",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀手机", tone: "科技感", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [{ id: "t-honor", title: "荣耀专属选题", angle: "", description: "", type: "traffic", relatedTrendIds: [], estimatedAppeal: "", status: "pending", createdAt: "2026-01-01" }],
+              scripts: [],
+              trends: [],
+              trendsDate: null,
+              reviewPersonas: null,
+              reviewResults: null,
+            },
+          ],
+          activeAccountId: "sprite-id",
+        })
+      );
+    });
+  }
+
+  test("切换器列出所有品牌并标记当前", async ({ page }) => {
+    await seedTwoAccounts(page);
+    await page.goto("/");
+
+    await page.getByTestId("brand-switcher-toggle").click();
+    const panel = page.getByTestId("brand-switcher-panel");
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText("雪碧")).toBeVisible();
+    await expect(panel.getByText("荣耀手机")).toBeVisible();
+    await expect(panel.getByText("新建品牌")).toBeVisible();
+    await expect(panel.getByText("删除当前品牌")).toBeVisible();
+  });
+
+  test("切换品牌后页面刷新且选题完全隔离", async ({ page }) => {
+    await seedTwoAccounts(page);
+    await page.goto("/");
+
+    const main = page.getByRole("main");
+    await expect(main.getByText("雪碧专属选题")).toBeVisible();
+    await expect(main.getByText("荣耀专属选题")).not.toBeVisible();
+
+    await page.getByTestId("brand-switcher-toggle").click();
+    await page.getByTestId("brand-switcher-panel").getByText("荣耀手机").click();
+
+    // 切换会触发 reload；等新页面加载
+    await page.waitForLoadState("load");
+    await expect(main.getByText("荣耀专属选题")).toBeVisible();
+    await expect(main.getByText("雪碧专属选题")).not.toBeVisible();
+
+    // 验证 activeAccountId 已改
+    const after = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
+    expect(after.activeAccountId).toBe("honor-id");
+  });
+
+  test("删除需输入品牌名才能确认", async ({ page }) => {
+    await seedTwoAccounts(page);
+    await page.goto("/");
+
+    await page.getByTestId("brand-switcher-toggle").click();
+    await page.getByTestId("brand-delete-trigger").click();
+
+    const modal = page.getByTestId("brand-delete-modal");
+    await expect(modal).toBeVisible();
+    await expect(modal.getByText("删除品牌「雪碧」？")).toBeVisible();
+
+    const confirmBtn = page.getByTestId("brand-delete-confirm");
+    await expect(confirmBtn).toBeDisabled();
+
+    // 输错不行
+    await page.getByTestId("brand-delete-input").fill("雪");
+    await expect(confirmBtn).toBeDisabled();
+
+    // 输对了
+    await page.getByTestId("brand-delete-input").fill("雪碧");
+    await expect(confirmBtn).toBeEnabled();
+  });
+
+  test("删除当前品牌后另一品牌接管 active", async ({ page }) => {
+    await seedTwoAccounts(page);
+    await page.goto("/");
+
+    await page.getByTestId("brand-switcher-toggle").click();
+    await page.getByTestId("brand-delete-trigger").click();
+    await page.getByTestId("brand-delete-input").fill("雪碧");
+    await page.getByTestId("brand-delete-confirm").click();
+
+    await page.waitForLoadState("load");
+
+    const after = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
+    expect(after.accounts.length).toBe(1);
+    expect(after.accounts[0].id).toBe("honor-id");
+    expect(after.activeAccountId).toBe("honor-id");
+
+    const main = page.getByRole("main");
+    await expect(main.getByText("荣耀专属选题")).toBeVisible();
+  });
+
+  test("/setup 是新建品牌流程不覆盖现有", async ({ page }) => {
+    await seedTwoAccounts(page);
+    await page.goto("/setup");
+
+    await expect(page.locator("h1")).toContainText("新建品牌");
+    // 表单是空的（不预填）
+    await expect(page.locator("#brandName")).toHaveValue("");
+
+    await page.fill("#accountName", "Lux官号");
+    await page.fill("#brandName", "Lux力士");
+    await page.fill("#industry", "日化");
+    await page.click("text=创建品牌");
+
+    // 等跳转回首页
+    await page.waitForURL("**/");
+
+    const after = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
+    expect(after.accounts.length).toBe(3);
+    const lux = after.accounts.find((a: { brand: { name: string } }) => a.brand.name === "Lux力士");
+    expect(lux).toBeTruthy();
+    expect(after.activeAccountId).toBe(lux.id);
+    // 原有的雪碧、荣耀没被改
+    expect(after.accounts.some((a: { id: string }) => a.id === "sprite-id")).toBe(true);
+    expect(after.accounts.some((a: { id: string }) => a.id === "honor-id")).toBe(true);
+  });
+
+  test("空状态显示新建品牌入口", async ({ page }) => {
+    await page.addInitScript(() => localStorage.clear());
+    await page.goto("/");
+    // sidebar 显示"新建品牌"按钮
+    const sidebar = page.locator("aside");
+    await expect(sidebar.getByText("新建品牌")).toBeVisible();
+  });
+});

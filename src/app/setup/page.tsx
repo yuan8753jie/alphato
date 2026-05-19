@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { saveAccount, getAccount } from "@/lib/store";
+import { createAccount, listAccounts } from "@/lib/store";
 import type { Account, Product, Persona, BenchmarkAccount, BrandMaterial, MaterialPurpose } from "@/lib/types";
 import { MATERIAL_PURPOSE_LABELS } from "@/lib/types";
 
@@ -34,18 +33,15 @@ const emptyAccount: Account = {
 };
 
 export default function SetupPage() {
-  const router = useRouter();
   const [account, setAccount] = useState<Account>(emptyAccount);
   const [ruleInput, setRuleInput] = useState("");
   const [saved, setSaved] = useState(false);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [uploadPurpose, setUploadPurpose] = useState<MaterialPurpose>("brand_guide");
 
+  // /setup 始终从空开始 — 这是"新建品牌"流程
   useEffect(() => {
-    const existing = getAccount();
-    if (existing) {
-      setAccount({ ...emptyAccount, ...existing, brandMaterials: existing.brandMaterials || [] });
-    }
+    setAccount(emptyAccount);
   }, []);
 
   function updateBrand(field: string, value: string) {
@@ -235,18 +231,25 @@ export default function SetupPage() {
   }
 
   function handleSave() {
-    saveAccount(account);
+    createAccount(account);
     setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    // 新建后刷新页面，让侧边栏切到新品牌
+    setTimeout(() => {
+      window.location.href = "/";
+    }, 600);
   }
+
+  const hasExistingAccounts = listAccounts().length > 0;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">账号工作区设置</h1>
+          <h1 className="text-2xl font-bold">{hasExistingAccounts ? "新建品牌" : "首次配置"}</h1>
           <p className="text-muted-foreground mt-1">
-            配置品牌信息、产品、目标受众，为 AI 创作提供上下文
+            {hasExistingAccounts
+              ? "新建一个独立品牌空间，与现有品牌完全隔离"
+              : "配置品牌信息、产品、目标受众，为 AI 创作提供上下文"}
           </p>
         </div>
       </div>
@@ -645,10 +648,10 @@ export default function SetupPage() {
 
       <div className="flex items-center justify-end gap-3 mt-8">
         {saved && (
-          <span className="text-sm text-green-600">已保存</span>
+          <span className="text-sm text-green-600">已创建，跳转中...</span>
         )}
-        <Button onClick={handleSave} size="lg">
-          保存设置
+        <Button onClick={handleSave} size="lg" disabled={saved}>
+          {hasExistingAccounts ? "创建品牌" : "保存设置"}
         </Button>
       </div>
     </div>
