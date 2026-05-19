@@ -334,3 +334,133 @@ test.describe("阶段2: 品牌切换器", () => {
     await expect(sidebar.getByText("新建品牌")).toBeVisible();
   });
 });
+
+test.describe("阶段3A: 产品 id 迁移", () => {
+  test("旧产品无 id 时自动补 UUID", async ({ page }) => {
+    // 先开页面拿 origin
+    await page.goto("/");
+    // 注入老结构（accounts[]，但产品没 id）
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "test-brand-id",
+              name: "测试",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "测试", tone: "", rules: [], industry: "" },
+              brandMaterials: [],
+              products: [
+                { name: "产品A", description: "", sellingPoints: [], imagePaths: [], links: [] },
+                { name: "产品B", description: "", sellingPoints: [], imagePaths: [], links: [] },
+              ],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [],
+              scripts: [],
+              trends: [],
+              trendsDate: null,
+              reviewPersonas: null,
+              reviewResults: null,
+            },
+          ],
+          activeAccountId: "test-brand-id",
+        })
+      );
+    });
+    // reload 触发 loadData → 迁移
+    await page.reload();
+    await expect(page.locator("h1")).toContainText("工作台");
+
+    const after = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
+    const products = after.accounts[0].products;
+    expect(products.length).toBe(2);
+    expect(products[0].id).toBeTruthy();
+    expect(products[1].id).toBeTruthy();
+    expect(products[0].id).not.toBe(products[1].id);
+    expect(products[0].name).toBe("产品A");
+    expect(products[1].name).toBe("产品B");
+  });
+
+  test("已有 id 的产品保留原 id（迁移幂等）", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "brand-x",
+              name: "测试",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "测试", tone: "", rules: [], industry: "" },
+              brandMaterials: [],
+              products: [
+                { id: "stable-prod-1", name: "产品A", description: "", sellingPoints: [], imagePaths: [], links: [] },
+              ],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [],
+              scripts: [],
+              trends: [],
+              trendsDate: null,
+              reviewPersonas: null,
+              reviewResults: null,
+            },
+          ],
+          activeAccountId: "brand-x",
+        })
+      );
+    });
+
+    await page.reload();
+    await expect(page.locator("h1")).toContainText("工作台");
+
+    const after = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
+    expect(after.accounts[0].products[0].id).toBe("stable-prod-1");
+  });
+
+  test("settings 添加新产品时自动生成 id", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "acc-1",
+              name: "雪碧",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "雪碧", tone: "", rules: [], industry: "饮料" },
+              brandMaterials: [],
+              products: [],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [], scripts: [], trends: [], trendsDate: null,
+              reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "acc-1",
+        })
+      );
+    });
+
+    await page.goto("/settings");
+    await page.getByRole("tab", { name: "产品库" }).click();
+    await page.getByRole("button", { name: "添加产品" }).click();
+    // 第一个产品输入框出现
+    await page.getByPlaceholder("产品名").first().fill("雪碧无糖");
+    await page.click("text=保存设置");
+    await expect(page.locator("text=已保存")).toBeVisible();
+
+    const after = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
+    const products = after.accounts[0].products;
+    expect(products.length).toBe(1);
+    expect(products[0].id).toBeTruthy();
+    expect(products[0].name).toBe("雪碧无糖");
+  });
+});

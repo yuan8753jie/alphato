@@ -1,4 +1,5 @@
 export interface Product {
+  id: string;
   name: string;
   description: string;
   sellingPoints: string[];
@@ -146,6 +147,7 @@ export interface Topic {
   status: TopicStatus;
   scheduledDate?: string;      // YYYY-MM-DD，排入日历的日期
   reviewScore?: number;        // Persona Review 综合评分
+  productIds?: string[];       // 绑定的产品 id（空 / undefined = 通用，可多选）
   createdAt: string;
 }
 
@@ -154,6 +156,7 @@ export interface Topic {
 export interface Script {
   id: string;
   topicId: string;
+  productId?: string;          // 本脚本主推的产品 id
   scenes: ScriptScene[];
   fullText: string;
   createdAt: string;

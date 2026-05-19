@@ -76,7 +76,7 @@ export default function SetupPage() {
       ...prev,
       products: [
         ...prev.products,
-        { name: "", description: "", sellingPoints: [], imagePaths: [], links: [] },
+        { id: crypto.randomUUID(), name: "", description: "", sellingPoints: [], imagePaths: [], links: [] },
       ],
     }));
   }

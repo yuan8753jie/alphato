@@ -1,4 +1,4 @@
-import { AppData, Account, Topic, Script, Trend, ReviewPersonaData, ReviewResults, SelectedTrendsMeta } from "./types";
+import { AppData, Account, Topic, Script, Trend, ReviewPersonaData, ReviewResults, SelectedTrendsMeta, Product } from "./types";
 
 const STORAGE_KEY = "alphato_data";
 
@@ -14,15 +14,32 @@ function genId(): string {
   return `acc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// 给老 Product 补 id（兼容旧数据）
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function ensureProductIds(products: any[]): Product[] {
+  return (products || []).map((p) => ({
+    id: p.id || genId(),
+    name: p.name || "",
+    description: p.description || "",
+    sellingPoints: p.sellingPoints || [],
+    imagePaths: p.imagePaths || [],
+    links: p.links || [],
+  }));
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function migrate(raw: any): AppData {
   if (!raw || typeof raw !== "object") return defaultData;
 
-  // New shape — return as-is (with safety defaults)
+  // New shape — return as-is (with safety defaults + product id backfill)
   if (Array.isArray(raw.accounts)) {
+    const accounts = raw.accounts.map((a: Account) => ({
+      ...a,
+      products: ensureProductIds(a.products),
+    }));
     return {
-      accounts: raw.accounts,
-      activeAccountId: raw.activeAccountId ?? (raw.accounts[0]?.id ?? null),
+      accounts,
+      activeAccountId: raw.activeAccountId ?? (accounts[0]?.id ?? null),
     };
   }
 
@@ -39,7 +56,7 @@ function migrate(raw: any): AppData {
       accountUrl: raw.account.accountUrl || "",
       brand: raw.account.brand || { name: "", tone: "", rules: [], industry: "" },
       brandMaterials: raw.account.brandMaterials || [],
-      products: raw.account.products || [],
+      products: ensureProductIds(raw.account.products),
       personas: raw.account.personas || [],
       benchmarkAccounts: raw.account.benchmarkAccounts || [],
       topics: raw.topics || [],
@@ -63,9 +80,11 @@ export function loadData(): AppData {
     if (!raw) return defaultData;
     const parsed = JSON.parse(raw);
     const migrated = migrate(parsed);
-    // Persist migration so subsequent loads are cheap
-    if (!Array.isArray(parsed.accounts)) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+    // 持久化迁移：检测是否实质性变更（结构或产品 id），有变就写回
+    const before = JSON.stringify(parsed);
+    const after = JSON.stringify(migrated);
+    if (before !== after) {
+      localStorage.setItem(STORAGE_KEY, after);
     }
     return migrated;
   } catch {
