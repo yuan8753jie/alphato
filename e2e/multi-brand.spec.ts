@@ -717,6 +717,154 @@ test.describe("阶段3C: Script ↔ Product 绑定", () => {
   });
 });
 
+test.describe("阶段5: 视频引用产品图（Seedance 智能参考）", () => {
+  async function seedHonorWithImages(page: import("@playwright/test").Page) {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "honor",
+              name: "荣耀官号",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [
+                {
+                  id: "p-magic",
+                  name: "Magic8 Pro",
+                  description: "",
+                  sellingPoints: [],
+                  imagePaths: [
+                    "https://example.com/magic-front.jpg",
+                    "https://example.com/magic-back.jpg",
+                    "https://example.com/magic-side.jpg",
+                    "/uploads/product-images/honor/p-magic/local-1.png",
+                  ],
+                  links: [],
+                  documents: [],
+                },
+              ],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [
+                {
+                  id: "topic-magic",
+                  title: "Magic8 拍照测评",
+                  angle: "",
+                  description: "",
+                  type: "conversion",
+                  relatedTrendIds: [],
+                  estimatedAppeal: "",
+                  status: "pending",
+                  productIds: ["p-magic"],
+                  createdAt: "2026-05-20",
+                },
+              ],
+              scripts: [
+                {
+                  id: "script-1",
+                  topicId: "topic-magic",
+                  productId: "p-magic",
+                  variant: "free-voiceover",
+                  label: "稳健版·口播",
+                  isCreative: false,
+                  hasVo: true,
+                  scenes: [
+                    { sceneNumber: 1, shotType: "极致特写", visual: "镜头", audio: "音乐", text: "看", duration: "3" },
+                  ],
+                  fullText: "测试",
+                  createdAt: "2026-05-20",
+                },
+              ],
+              trends: [], trendsDate: null,
+              reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "honor",
+        })
+      );
+    });
+  }
+
+  test("有图时显示参考图面板，默认关", async ({ page }) => {
+    await seedHonorWithImages(page);
+    await page.goto("/topics/topic-magic");
+    const panel = page.getByTestId("ref-images-panel");
+    await expect(panel).toBeVisible();
+    const toggle = page.getByTestId("ref-images-toggle");
+    await expect(toggle).not.toBeChecked();
+    // 网格默认隐藏
+    await expect(page.getByTestId("ref-images-grid")).not.toBeVisible();
+  });
+
+  test("开启 toggle → 网格出现 → 选 2 张显示序号", async ({ page }) => {
+    await seedHonorWithImages(page);
+    await page.goto("/topics/topic-magic");
+    await page.getByTestId("ref-images-toggle").check();
+    const grid = page.getByTestId("ref-images-grid");
+    await expect(grid).toBeVisible();
+    // 4 张图都在
+    await expect(grid.locator("button")).toHaveCount(4);
+
+    await page.getByTestId("ref-image-0").click();
+    await page.getByTestId("ref-image-2").click();
+    await expect(page.getByText("已选 2/9")).toBeVisible();
+  });
+
+  test("生成视频请求带上选中的多张参考图", async ({ page }) => {
+    await seedHonorWithImages(page);
+
+    const captured: { body: { referenceImages?: string[]; productName?: string } | null } = { body: null };
+    await page.route("/api/generate-video", async (route) => {
+      captured.body = await route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, task: { taskId: "fake-task" } }),
+      });
+    });
+
+    await page.goto("/topics/topic-magic");
+    await page.getByTestId("ref-images-toggle").check();
+    await page.getByTestId("ref-image-0").click();
+    await page.getByTestId("ref-image-1").click();
+    await page.getByTestId("ref-image-2").click();
+
+    await page.getByRole("button", { name: /生成视频/ }).click();
+    await expect.poll(() => captured.body?.referenceImages?.length).toBe(3);
+    expect(captured.body?.referenceImages).toEqual([
+      "https://example.com/magic-front.jpg",
+      "https://example.com/magic-back.jpg",
+      "https://example.com/magic-side.jpg",
+    ]);
+    expect(captured.body?.productName).toBe("Magic8 Pro");
+  });
+
+  test("toggle 关时不传参考图", async ({ page }) => {
+    await seedHonorWithImages(page);
+
+    const captured: { body: { referenceImages?: string[] } | null } = { body: null };
+    await page.route("/api/generate-video", async (route) => {
+      captured.body = await route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, task: { taskId: "fake-task" } }),
+      });
+    });
+
+    await page.goto("/topics/topic-magic");
+    // 不勾 toggle
+    await page.getByRole("button", { name: /生成视频/ }).click();
+    await expect.poll(() => captured.body !== null).toBe(true);
+    expect(captured.body?.referenceImages).toEqual([]);
+  });
+});
+
 test.describe("阶段4: 产品文档（PDF / MD）", () => {
   async function seedBrandWithProduct(page: import("@playwright/test").Page) {
     await page.goto("/");

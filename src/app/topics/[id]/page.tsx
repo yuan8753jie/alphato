@@ -34,6 +34,10 @@ export default function TopicDetailPage() {
   const [topic, setTopic] = useState<Topic | null>(null);
   // 选定用于本次脚本生成的产品 id。空字符串 = 不指定（通用）
   const [scriptProductId, setScriptProductId] = useState<string>("");
+  // 视频引用产品图：是否开启 + 选中的图 URL 集合（Seedance 上限 9 张）
+  const [useRefImages, setUseRefImages] = useState(false);
+  const [refImageUrls, setRefImageUrls] = useState<string[]>([]);
+  const MAX_REF_IMAGES = 9;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [scripts, setScripts] = useState<Record<VariantKey, any>>({} as Record<VariantKey, any>);
   const [loadingVariants, setLoadingVariants] = useState<Set<VariantKey>>(new Set());
@@ -74,6 +78,11 @@ export default function TopicDetailPage() {
       setScripts(map as any);
     }
   }, [topicId, router]);
+
+  // 切产品时清空参考图选择（URL 不通用）
+  useEffect(() => {
+    setRefImageUrls([]);
+  }, [scriptProductId]);
 
   async function generateAllVariants() {
     if (!account || !topic) return;
@@ -148,6 +157,10 @@ export default function TopicDetailPage() {
     updateVideoState(tab, { loading: true, status: "提交视频生成...", url: undefined });
 
     try {
+      // 当前选中产品（跟脚本主推产品一致）
+      const focusProduct = scriptProductId
+        ? account?.products.find((p) => p.id === scriptProductId)
+        : undefined;
       const res = await fetch("/api/generate-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -155,8 +168,8 @@ export default function TopicDetailPage() {
           scenes: script.scenes,
           aspectRatio: "9:16",
           variant: tab,
-          productImage: account?.products?.[0]?.imagePaths?.[0] || undefined,
-          productName: account?.products?.[0]?.name || undefined,
+          referenceImages: useRefImages ? refImageUrls : [],
+          productName: focusProduct?.name || account?.products?.[0]?.name || undefined,
         }),
       });
       const data = await res.json();
@@ -422,6 +435,17 @@ export default function TopicDetailPage() {
           {(() => {
             const vs = videoStates[activeTab] || { loading: false };
             const isVoiceover = activeTab.endsWith("voiceover");
+            const focusProduct = scriptProductId
+              ? account?.products.find((p) => p.id === scriptProductId)
+              : undefined;
+            const availableImages = focusProduct?.imagePaths || [];
+            const toggleRefImage = (url: string) => {
+              setRefImageUrls((prev) => {
+                if (prev.includes(url)) return prev.filter((u) => u !== url);
+                if (prev.length >= MAX_REF_IMAGES) return prev; // 已满
+                return [...prev, url];
+              });
+            };
             return (
               <Card>
                 <CardHeader className="pb-2">
@@ -431,6 +455,58 @@ export default function TopicDetailPage() {
                       {vs.loading ? vs.status : vs.url ? "重新生成" : "生成视频（Seedance 2.0）"}
                     </Button>
                   </div>
+                  {/* 参考产品图（可选，最多 9 张） */}
+                  {availableImages.length > 0 && (
+                    <div className="mt-3 space-y-2" data-testid="ref-images-panel">
+                      <label className="flex items-center gap-2 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={useRefImages}
+                          onChange={(e) => {
+                            setUseRefImages(e.target.checked);
+                            if (!e.target.checked) setRefImageUrls([]);
+                          }}
+                          data-testid="ref-images-toggle"
+                        />
+                        <span>参考产品图（Seedance 智能参考，最多 9 张）</span>
+                        {useRefImages && refImageUrls.length > 0 && (
+                          <span className="text-muted-foreground">已选 {refImageUrls.length}/{MAX_REF_IMAGES}</span>
+                        )}
+                      </label>
+                      {useRefImages && (
+                        <div className="flex gap-2 flex-wrap" data-testid="ref-images-grid">
+                          {availableImages.map((img, idx) => {
+                            const selected = refImageUrls.includes(img);
+                            const isLocal = img.startsWith("/uploads/");
+                            const atLimit = !selected && refImageUrls.length >= MAX_REF_IMAGES;
+                            return (
+                              <button
+                                key={idx}
+                                onClick={() => toggleRefImage(img)}
+                                disabled={atLimit}
+                                title={isLocal ? "自家上传图：本地 dev 环境 Seedance 访问不到，部署上线后生效" : ""}
+                                className={`relative w-14 h-14 rounded border-2 overflow-hidden transition-all cursor-pointer ${
+                                  selected ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-foreground/40"
+                                } ${atLimit ? "opacity-40 cursor-not-allowed" : ""}`}
+                                data-testid={`ref-image-${idx}`}
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={img} alt={`ref ${idx + 1}`} className="w-full h-full object-cover" />
+                                {selected && (
+                                  <span className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-primary text-white text-[10px] flex items-center justify-center font-bold">
+                                    {refImageUrls.indexOf(img) + 1}
+                                  </span>
+                                )}
+                                {isLocal && (
+                                  <span className="absolute bottom-0 left-0 right-0 bg-amber-500/80 text-white text-[8px] text-center leading-tight py-px">本地</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {vs.url ? (
