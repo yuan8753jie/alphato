@@ -557,15 +557,27 @@ export default function SetupPage() {
                             className="hidden"
                             onChange={async (e) => {
                               const files = e.target.files;
-                              if (!files) return;
-                              for (const file of Array.from(files)) {
-                                const reader = new FileReader();
-                                reader.onload = () => {
-                                  const dataUrl = reader.result as string;
-                                  updateProduct(i, "imagePaths", [...product.imagePaths, dataUrl]);
-                                };
-                                reader.readAsDataURL(file);
-                              }
+                              if (!files || files.length === 0) return;
+                              // 并行读取所有文件，全部完成再一次性追加到 state（避免闭包覆盖）
+                              const dataUrls = await Promise.all(
+                                Array.from(files).map(
+                                  (f) => new Promise<string>((resolve, reject) => {
+                                    const r = new FileReader();
+                                    r.onload = () => resolve(r.result as string);
+                                    r.onerror = () => reject(r.error);
+                                    r.readAsDataURL(f);
+                                  })
+                                )
+                              );
+                              const targetIndex = i;
+                              setAccount((prev) => ({
+                                ...prev,
+                                products: prev.products.map((p, idx) =>
+                                  idx === targetIndex
+                                    ? { ...p, imagePaths: [...p.imagePaths, ...dataUrls] }
+                                    : p
+                                ),
+                              }));
                               e.target.value = "";
                             }}
                           />

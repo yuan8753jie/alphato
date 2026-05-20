@@ -762,7 +762,7 @@ test.describe("阶段4: 产品文档（PDF / MD）", () => {
   test("上传 PDF → API 调用，UI 显示新文档", async ({ page }) => {
     await seedBrandWithProduct(page);
 
-    let captured: { accountId?: string; productId?: string } | null = null;
+    const captured: { body: { accountId?: string; productId?: string } | null } = { body: null };
     const fakeDoc = {
       id: "doc-1",
       fileName: "magic7-spec.pdf",
@@ -783,10 +783,10 @@ test.describe("阶段4: 产品文档（PDF / MD）", () => {
     await page.route("/api/extract-product-doc", async (route) => {
       const form = route.request().postData();
       // Playwright 的 multipart 取不到，简单读 headers + url 验证
-      captured = { accountId: undefined, productId: undefined };
+      captured.body = { accountId: undefined, productId: undefined };
       // 用 contains 判断 multipart 里有 accountId / productId 字段
-      if (form?.includes("honor")) captured.accountId = "honor";
-      if (form?.includes("p-magic")) captured.productId = "p-magic";
+      if (form?.includes("honor")) captured.body.accountId = "honor";
+      if (form?.includes("p-magic")) captured.body.productId = "p-magic";
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -806,8 +806,8 @@ test.describe("阶段4: 产品文档（PDF / MD）", () => {
     });
 
     // 等 mock 返回
-    await expect.poll(() => captured?.accountId).toBe("honor");
-    expect(captured?.productId).toBe("p-magic");
+    await expect.poll(() => captured.body?.accountId).toBe("honor");
+    expect(captured.body?.productId).toBe("p-magic");
 
     // UI 显示新文档
     await expect(page.getByText("magic7-spec.pdf")).toBeVisible();
@@ -818,6 +818,70 @@ test.describe("阶段4: 产品文档（PDF / MD）", () => {
     await expect(docCard.getByText("AI 影像", { exact: true })).toBeVisible(); // chip
     await expect(docCard.getByText("影像旗舰")).toBeVisible();
     await expect(docCard.getByText("25-35 岁科技尝鲜者，重视拍照")).toBeVisible();
+  });
+
+  test("产品图：一次选 3 张全部保留（防闭包覆盖回归）", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "honor",
+              name: "荣耀官号",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀手机", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [
+                {
+                  id: "p-multi",
+                  name: "Magic8",
+                  description: "",
+                  sellingPoints: [],
+                  imagePaths: [],
+                  links: [],
+                  documents: [],
+                },
+              ],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [], scripts: [], trends: [], trendsDate: null,
+              reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "honor",
+        })
+      );
+    });
+
+    await page.goto("/settings");
+    await page.getByRole("tab", { name: "产品库" }).click();
+
+    // 一次性选 3 张图（pixel PNG 各异，确保 data url 不同）
+    const fileInput = page.locator(`input[type="file"][accept="image/*"]`).first();
+    // 3 张 1×1 PNG（颜色不同）
+    const pngs = [
+      Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da6300010000000500010d0a2db40000000049454e44ae426082", "hex"),
+      Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da6300fcffff3f0300070003e9a85d2d0000000049454e44ae426082", "hex"),
+      Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63000100000005000100bb73ae6f0000000049454e44ae426082", "hex"),
+    ];
+    await fileInput.setInputFiles([
+      { name: "a.png", mimeType: "image/png", buffer: pngs[0] },
+      { name: "b.png", mimeType: "image/png", buffer: pngs[1] },
+      { name: "c.png", mimeType: "image/png", buffer: pngs[2] },
+    ]);
+
+    // 等 3 张缩略图出来
+    const thumbs = page.locator('img[alt^="Magic8"]');
+    await expect(thumbs).toHaveCount(3);
+
+    // 保存并验证 localStorage 里 3 张都在
+    await page.click("text=保存设置");
+    await expect(page.locator("text=已保存")).toBeVisible();
+    const after = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
+    expect(after.accounts[0].products[0].imagePaths.length).toBe(3);
   });
 
   test("非允许的文件类型被前端 input.accept 限制", async ({ page }) => {
