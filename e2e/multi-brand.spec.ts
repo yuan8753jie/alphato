@@ -865,6 +865,165 @@ test.describe("阶段5: 视频引用产品图（Seedance 智能参考）", () =>
   });
 });
 
+test.describe("阶段6: 视频本地持久化", () => {
+  async function seedHonorWithScript(page: import("@playwright/test").Page) {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "honor",
+              name: "荣耀官号",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [
+                {
+                  id: "p-magic",
+                  name: "Magic8",
+                  description: "",
+                  sellingPoints: [],
+                  imagePaths: [],
+                  links: [],
+                  documents: [],
+                },
+              ],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [
+                {
+                  id: "topic-vid",
+                  title: "Magic8 测评",
+                  angle: "",
+                  description: "",
+                  type: "conversion",
+                  relatedTrendIds: [],
+                  estimatedAppeal: "",
+                  status: "pending",
+                  productIds: ["p-magic"],
+                  createdAt: "2026-05-20",
+                },
+              ],
+              scripts: [
+                {
+                  id: "script-fv",
+                  topicId: "topic-vid",
+                  productId: "p-magic",
+                  variant: "free-voiceover",
+                  label: "稳健版·口播",
+                  scenes: [{ sceneNumber: 1, visual: "镜头", audio: "音乐", text: "看", duration: "3" }],
+                  fullText: "test",
+                  createdAt: "2026-05-20",
+                },
+              ],
+              trends: [], trendsDate: null,
+              reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "honor",
+        })
+      );
+    });
+  }
+
+  test("生成视频成功后，本地 URL 落到 Script 上", async ({ page }) => {
+    await seedHonorWithScript(page);
+
+    // Mock 生成 + 状态查询
+    await page.route("/api/generate-video", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, task: { taskId: "fake-task-123" } }),
+      });
+    });
+    let pollCount = 0;
+    await page.route("/api/video-status*", async (route) => {
+      pollCount++;
+      // 第 1 次返回 processing；第 2 次返回 succeed + 本地 URL
+      const body = pollCount === 1
+        ? { success: true, task: { taskId: "fake-task-123", status: "processing", videoUrl: undefined } }
+        : { success: true, task: { taskId: "fake-task-123", status: "succeed", videoUrl: "/uploads/videos/fake-task-123.mp4" } };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(body),
+      });
+    });
+
+    await page.goto("/topics/topic-vid");
+    await page.getByRole("button", { name: /生成视频/ }).click();
+
+    // 等成功（轮询间隔 5s，最多等 15s 一次给两次响应空间）
+    await expect.poll(
+      async () => {
+        const data = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
+        const s = data.accounts[0].scripts.find((x: { id: string }) => x.id === "script-fv");
+        return s?.videoUrl;
+      },
+      { timeout: 20000, intervals: [1000, 2000] }
+    ).toBe("/uploads/videos/fake-task-123.mp4");
+
+    // 再读 localStorage 验证 videoTaskId 也落了
+    const data = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
+    const s = data.accounts[0].scripts.find((x: { id: string }) => x.id === "script-fv");
+    expect(s.videoTaskId).toBe("fake-task-123");
+  });
+
+  test("页面刷新后，已生成的视频仍可播放（从 Script.videoUrl 恢复）", async ({ page }) => {
+    // 预置一个已经有 videoUrl 的 script
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "honor",
+              name: "荣耀官号",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [{ id: "p-magic", name: "Magic8", description: "", sellingPoints: [], imagePaths: [], links: [], documents: [] }],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [
+                { id: "topic-vid", title: "Magic8 测评", angle: "", description: "", type: "conversion", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: ["p-magic"], createdAt: "2026-05-20" },
+              ],
+              scripts: [
+                {
+                  id: "script-fv",
+                  topicId: "topic-vid",
+                  productId: "p-magic",
+                  variant: "free-voiceover",
+                  scenes: [{ sceneNumber: 1, visual: "镜头", audio: "音乐", text: "看", duration: "3" }],
+                  fullText: "test",
+                  videoUrl: "/uploads/videos/persisted-task.mp4",
+                  videoTaskId: "persisted-task",
+                  createdAt: "2026-05-20",
+                },
+              ],
+              trends: [], trendsDate: null, reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "honor",
+        })
+      );
+    });
+
+    await page.goto("/topics/topic-vid");
+
+    // <video> 元素出现，src 是本地路径
+    const videoEl = page.locator("video");
+    await expect(videoEl).toBeVisible();
+    await expect(videoEl).toHaveAttribute("src", "/uploads/videos/persisted-task.mp4");
+  });
+});
+
 test.describe("阶段4: 产品文档（PDF / MD）", () => {
   async function seedBrandWithProduct(page: import("@playwright/test").Page) {
     await page.goto("/");

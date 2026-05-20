@@ -70,12 +70,28 @@ export default function TopicDetailPage() {
 
     const existing = getScripts().filter((s) => s.topicId === topicId);
     const map: Record<string, unknown> = {};
+    const restoredVideoStates: Record<string, { taskId?: string; status?: string; url?: string; loading: boolean }> = {};
     for (const s of existing) {
-      if (s.variant) map[s.variant] = s;
+      if (s.variant) {
+        map[s.variant] = s;
+        // 恢复已有视频（本地 URL，刷新页面还能看）
+        if (s.videoUrl) {
+          restoredVideoStates[s.variant] = {
+            url: s.videoUrl,
+            taskId: s.videoTaskId,
+            status: "完成",
+            loading: false,
+          };
+        }
+      }
     }
     if (Object.keys(map).length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setScripts(map as any);
+    }
+    if (Object.keys(restoredVideoStates).length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setVideoStates(restoredVideoStates as any);
     }
   }, [topicId, router]);
 
@@ -184,6 +200,16 @@ export default function TopicDetailPage() {
       if (!videoUrl) return;
 
       updateVideoState(tab, { url: videoUrl, status: "完成", loading: false });
+
+      // 持久化：把视频路径 + taskId 写回 Script，刷新页面也能看
+      // 后端的 video-status 已经把视频拉到 /uploads/videos/<taskId>.mp4，
+      // 这里只是把 URL 落到 localStorage 里。
+      if (script && script.id) {
+        const updatedScript = { ...script, videoUrl, videoTaskId: data.task.taskId };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        saveScript(updatedScript as any);
+        setScripts((prev) => ({ ...prev, [tab]: updatedScript }));
+      }
     } catch (err) {
       setError(String(err));
       updateVideoState(tab, { loading: false });

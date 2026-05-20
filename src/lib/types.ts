@@ -175,21 +175,45 @@ export interface Topic {
 
 // ===== 脚本 =====
 
+export type ScriptVariant =
+  | "free-voiceover"
+  | "free-music"
+  | "creative-voiceover"
+  | "creative-music";
+
 export interface Script {
   id: string;
   topicId: string;
-  productId?: string;          // 本脚本主推的产品 id
+  productId?: string;              // 本脚本主推的产品 id
+  variant?: ScriptVariant;         // 4 个变体之一
+  label?: string;
+  isCreative?: boolean;
+  hasVo?: boolean;
+  creativeMethod?: string;
+  title?: string;
+  hook?: string;
+  creativeApproach?: string;
+  musicStyle?: string;
+  hashtags?: string[];
+  totalDuration?: string;
   scenes: ScriptScene[];
   fullText: string;
+  notes?: string;
+  concept?: string;
+  // 视频成片
+  videoUrl?: string;               // 本地保存路径，如 /uploads/videos/<taskId>.mp4
+  videoTaskId?: string;            // Seedance task id，溯源用
   createdAt: string;
 }
 
 export interface ScriptScene {
   sceneNumber: number;
+  shotType?: string;
   duration: string;
   visual: string;
   audio: string;
   text: string;
+  transition?: string;
 }
 
 // ===== 数据存储 =====
