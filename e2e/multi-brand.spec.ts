@@ -820,7 +820,7 @@ test.describe("阶段4: 产品文档（PDF / MD）", () => {
     await expect(docCard.getByText("25-35 岁科技尝鲜者，重视拍照")).toBeVisible();
   });
 
-  test("产品图：一次选 3 张全部保留（防闭包覆盖回归）", async ({ page }) => {
+  test("产品图：一次选 3 张全部上传到服务器，localStorage 只存 URL", async ({ page }) => {
     await page.goto("/");
     await page.evaluate(() => {
       localStorage.setItem(
@@ -856,12 +856,25 @@ test.describe("阶段4: 产品文档（PDF / MD）", () => {
       );
     });
 
+    // Mock 上传 API：依次返回 3 个固定 URL
+    let counter = 0;
+    await page.route("/api/upload-product-image", async (route) => {
+      counter++;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          url: `/uploads/product-images/honor/p-multi/mock-${counter}.png`,
+        }),
+      });
+    });
+
     await page.goto("/settings");
     await page.getByRole("tab", { name: "产品库" }).click();
 
-    // 一次性选 3 张图（pixel PNG 各异，确保 data url 不同）
+    // 一次性选 3 张图
     const fileInput = page.locator(`input[type="file"][accept="image/*"]`).first();
-    // 3 张 1×1 PNG（颜色不同）
     const pngs = [
       Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da6300010000000500010d0a2db40000000049454e44ae426082", "hex"),
       Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da6300fcffff3f0300070003e9a85d2d0000000049454e44ae426082", "hex"),
@@ -873,15 +886,98 @@ test.describe("阶段4: 产品文档（PDF / MD）", () => {
       { name: "c.png", mimeType: "image/png", buffer: pngs[2] },
     ]);
 
-    // 等 3 张缩略图出来
+    // API 被调 3 次
+    await expect.poll(() => counter).toBe(3);
+
+    // 3 张缩略图渲染
     const thumbs = page.locator('img[alt^="Magic8"]');
     await expect(thumbs).toHaveCount(3);
 
-    // 保存并验证 localStorage 里 3 张都在
+    // 保存
     await page.click("text=保存设置");
     await expect(page.locator("text=已保存")).toBeVisible();
+
     const after = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
-    expect(after.accounts[0].products[0].imagePaths.length).toBe(3);
+    const paths = after.accounts[0].products[0].imagePaths;
+    expect(paths.length).toBe(3);
+    // localStorage 里存的是 URL，不是 base64
+    for (const p of paths) {
+      expect(p.startsWith("/uploads/product-images/")).toBe(true);
+      expect(p.startsWith("data:")).toBe(false);
+    }
+  });
+
+  test("删除自家上传的图片：调 /api/delete-upload 清盘上文件", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "honor",
+              name: "荣耀",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [
+                {
+                  id: "p-x",
+                  name: "Magic",
+                  description: "",
+                  sellingPoints: [],
+                  imagePaths: [
+                    "/uploads/product-images/honor/p-x/local-img.png",
+                    "https://example.com/external-img.png",
+                  ],
+                  links: [],
+                  documents: [],
+                },
+              ],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [], scripts: [], trends: [], trendsDate: null,
+              reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "honor",
+        })
+      );
+    });
+
+    let deletedUrl = "";
+    let deleteCalled = false;
+    await page.route("/api/delete-upload", async (route) => {
+      const body = await route.request().postDataJSON();
+      deletedUrl = body.fileUrl;
+      deleteCalled = true;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) });
+    });
+
+    await page.goto("/settings");
+    await page.getByRole("tab", { name: "产品库" }).click();
+
+    // 删第一张图（自家上传）—— hover 才显示 ×，用 force 直接点
+    const thumbs = page.locator('img[alt^="Magic"]');
+    await expect(thumbs).toHaveCount(2);
+    await thumbs.first().hover();
+    await thumbs.first().locator("..").locator("button").click();
+
+    // 调了 delete-upload
+    await expect.poll(() => deleteCalled).toBe(true);
+    expect(deletedUrl).toBe("/uploads/product-images/honor/p-x/local-img.png");
+
+    // 删第二张（外链）—— 不应调 delete-upload
+    deleteCalled = false;
+    const remaining = page.locator('img[alt^="Magic"]');
+    await expect(remaining).toHaveCount(1);
+    await remaining.first().hover();
+    await remaining.first().locator("..").locator("button").click();
+    await expect(remaining).toHaveCount(0);
+    // 给一点时间确认 delete 没被调
+    await page.waitForTimeout(200);
+    expect(deleteCalled).toBe(false);
   });
 
   test("非允许的文件类型被前端 input.accept 限制", async ({ page }) => {
@@ -896,7 +992,7 @@ test.describe("阶段4: 产品文档（PDF / MD）", () => {
     expect(accept).not.toContain(".docx");
   });
 
-  test("删除文档：UI 立刻移除 + 调 /api/delete-product-doc", async ({ page }) => {
+  test("删除文档：UI 立刻移除 + 调 /api/delete-upload", async ({ page }) => {
     await page.goto("/");
     await page.evaluate(() => {
       localStorage.setItem(
@@ -947,7 +1043,7 @@ test.describe("阶段4: 产品文档（PDF / MD）", () => {
 
     let deleteCalled = false;
     let deletedUrl = "";
-    await page.route("/api/delete-product-doc", async (route) => {
+    await page.route("/api/delete-upload", async (route) => {
       const body = await route.request().postDataJSON();
       deleteCalled = true;
       deletedUrl = body.fileUrl;

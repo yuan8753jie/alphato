@@ -152,7 +152,7 @@ export default function SetupPage() {
   async function handleDocDelete(productIndex: number, doc: ProductDocument) {
     // 先删服务器文件（失败不阻塞 UI 删除）
     try {
-      await fetch("/api/delete-product-doc", {
+      await fetch("/api/delete-upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileUrl: doc.fileUrl }),
@@ -558,23 +558,39 @@ export default function SetupPage() {
                             onChange={async (e) => {
                               const files = e.target.files;
                               if (!files || files.length === 0) return;
-                              // 并行读取所有文件，全部完成再一次性追加到 state（避免闭包覆盖）
-                              const dataUrls = await Promise.all(
-                                Array.from(files).map(
-                                  (f) => new Promise<string>((resolve, reject) => {
-                                    const r = new FileReader();
-                                    r.onload = () => resolve(r.result as string);
-                                    r.onerror = () => reject(r.error);
-                                    r.readAsDataURL(f);
-                                  })
-                                )
+                              if (!account.id || !product.id) {
+                                alert("请先保存品牌设置再上传图片");
+                                e.target.value = "";
+                                return;
+                              }
+                              // 并行上传到服务器；只把返回的 URL 存进 state
+                              const uploaded = await Promise.all(
+                                Array.from(files).map(async (f) => {
+                                  const form = new FormData();
+                                  form.append("file", f);
+                                  form.append("accountId", account.id);
+                                  form.append("productId", product.id);
+                                  try {
+                                    const res = await fetch("/api/upload-product-image", { method: "POST", body: form });
+                                    const data = await res.json();
+                                    return data.success && data.url ? (data.url as string) : null;
+                                  } catch {
+                                    return null;
+                                  }
+                                })
                               );
+                              const urls = uploaded.filter((u): u is string => Boolean(u));
+                              if (urls.length === 0) {
+                                alert("图片上传失败");
+                                e.target.value = "";
+                                return;
+                              }
                               const targetIndex = i;
                               setAccount((prev) => ({
                                 ...prev,
                                 products: prev.products.map((p, idx) =>
                                   idx === targetIndex
-                                    ? { ...p, imagePaths: [...p.imagePaths, ...dataUrls] }
+                                    ? { ...p, imagePaths: [...p.imagePaths, ...urls] }
                                     : p
                                 ),
                               }));
@@ -637,7 +653,17 @@ export default function SetupPage() {
                               className="w-16 h-16 object-cover rounded border"
                             />
                             <button
-                              onClick={() => {
+                              onClick={async () => {
+                                // 自家上传的图片（/uploads/...）顺便清盘上文件；外链图（AI 搜索得到）只从 state 移除
+                                if (img.startsWith("/uploads/")) {
+                                  try {
+                                    await fetch("/api/delete-upload", {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ fileUrl: img }),
+                                    });
+                                  } catch { /* ignore */ }
+                                }
                                 updateProduct(i, "imagePaths", product.imagePaths.filter((_, k) => k !== j));
                               }}
                               className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
