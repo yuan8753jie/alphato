@@ -1,3 +1,24 @@
+export type ProductDocumentFileType = "pdf" | "markdown" | "text" | "image" | "other";
+
+export interface ProductDocumentExtracted {
+  sellingPoints: string[];     // 核心卖点
+  targetAudience: string;      // 受众画像
+  keyFeatures: string[];       // 关键功能/规格
+  positioning: string;         // 一句话定位
+  scenarios: string[];         // 使用场景
+  summary: string;             // 全文摘要
+}
+
+export interface ProductDocument {
+  id: string;
+  fileName: string;            // 原始文件名
+  fileType: ProductDocumentFileType;
+  fileUrl: string;             // 服务器存放路径（相对 /public 的可访问 url，如 "/uploads/product-docs/.../xx.pdf"）
+  sizeBytes: number;
+  extracted: ProductDocumentExtracted;
+  uploadedAt: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -5,6 +26,7 @@ export interface Product {
   sellingPoints: string[];
   imagePaths: string[];
   links: string[];
+  documents?: ProductDocument[];
 }
 
 export interface Persona {

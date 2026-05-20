@@ -39,8 +39,27 @@ export function buildBrandContext(
         ? `  卖点：${focusProduct.sellingPoints.join("、")}`
         : "",
     ].filter(Boolean).join("\n");
+
+    // 注入产品文档（如果有）
+    const docs = focusProduct.documents || [];
+    let docsBlock = "";
+    if (docs.length > 0) {
+      const docBlocks = docs.map((d) => {
+        const lines = [`  · 文档来源：${d.fileName}`];
+        if (d.extracted.positioning) lines.push(`    定位：${d.extracted.positioning}`);
+        if (d.extracted.targetAudience) lines.push(`    受众：${d.extracted.targetAudience}`);
+        if (d.extracted.sellingPoints.length > 0) lines.push(`    卖点：${d.extracted.sellingPoints.join("、")}`);
+        if (d.extracted.keyFeatures.length > 0) lines.push(`    关键功能：${d.extracted.keyFeatures.join("、")}`);
+        if (d.extracted.scenarios.length > 0) lines.push(`    使用场景：${d.extracted.scenarios.join("、")}`);
+        if (d.extracted.summary) lines.push(`    摘要：${d.extracted.summary}`);
+        return lines.join("\n");
+      }).join("\n\n");
+      docsBlock = `\n  产品文档（${docs.length} 份，深度参考）：\n${docBlocks}`;
+    }
+
     productsBlock =
       focusLines +
+      docsBlock +
       (otherNames.length > 0
         ? `\n其他在售产品（仅作背景，不要重点提）：${otherNames.join("、")}`
         : "");

@@ -14,7 +14,7 @@ function genId(): string {
   return `acc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// 给老 Product 补 id（兼容旧数据）
+// 给老 Product 补 id 和 documents（兼容旧数据）
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function ensureProductIds(products: any[]): Product[] {
   return (products || []).map((p) => ({
@@ -24,6 +24,7 @@ function ensureProductIds(products: any[]): Product[] {
     sellingPoints: p.sellingPoints || [],
     imagePaths: p.imagePaths || [],
     links: p.links || [],
+    documents: Array.isArray(p.documents) ? p.documents : [],
   }));
 }
 

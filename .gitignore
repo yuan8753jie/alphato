@@ -41,3 +41,6 @@ next-env.d.ts
 
 # claude code agent artifacts
 .claude/
+
+# user uploads (product docs, etc.)
+/public/uploads/

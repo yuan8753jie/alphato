@@ -698,9 +698,9 @@ test.describe("阶段3C: Script ↔ Product 绑定", () => {
   test("选「通用」时不传 productId", async ({ page }) => {
     await seedHonorForScript(page);
 
-    let capturedBody: { productId?: string } | null = null;
+    const captured: { body: { productId?: string } | null } = { body: null };
     await page.route("/api/generate-script", async (route) => {
-      capturedBody = await route.request().postDataJSON();
+      captured.body = await route.request().postDataJSON();
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -712,7 +712,204 @@ test.describe("阶段3C: Script ↔ Product 绑定", () => {
     await page.getByTestId("script-product-select").selectOption(""); // 通用
     await page.getByRole("button", { name: /生成 4 组脚本/ }).click();
 
-    await expect.poll(() => capturedBody !== null).toBe(true);
-    expect(capturedBody?.productId).toBeUndefined();
+    await expect.poll(() => captured.body !== null).toBe(true);
+    expect(captured.body?.productId).toBeUndefined();
+  });
+});
+
+test.describe("阶段4: 产品文档（PDF / MD）", () => {
+  async function seedBrandWithProduct(page: import("@playwright/test").Page) {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "honor",
+              name: "荣耀官号",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀手机", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [
+                {
+                  id: "p-magic",
+                  name: "Magic7",
+                  description: "",
+                  sellingPoints: [],
+                  imagePaths: [],
+                  links: [],
+                  documents: [],
+                },
+              ],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [],
+              scripts: [],
+              trends: [],
+              trendsDate: null,
+              reviewPersonas: null,
+              reviewResults: null,
+            },
+          ],
+          activeAccountId: "honor",
+        })
+      );
+    });
+  }
+
+  test("上传 PDF → API 调用，UI 显示新文档", async ({ page }) => {
+    await seedBrandWithProduct(page);
+
+    let captured: { accountId?: string; productId?: string } | null = null;
+    const fakeDoc = {
+      id: "doc-1",
+      fileName: "magic7-spec.pdf",
+      fileType: "pdf",
+      fileUrl: "/uploads/product-docs/honor/p-magic/doc-1-magic7-spec.pdf",
+      sizeBytes: 12345,
+      extracted: {
+        sellingPoints: ["AI 影像", "续航 5500mAh"],
+        targetAudience: "25-35 岁科技尝鲜者，重视拍照",
+        keyFeatures: ["第三代骁龙 8", "5500mAh 电池", "潜望长焦"],
+        positioning: "影像旗舰",
+        scenarios: ["旅行拍摄", "夜景人像"],
+        summary: "Magic7 是 2026 年发布的旗舰，搭载第三代骁龙 8，5500mAh，主打 AI 影像与持久续航。",
+      },
+      uploadedAt: "2026-05-20T08:00:00Z",
+    };
+
+    await page.route("/api/extract-product-doc", async (route) => {
+      const form = route.request().postData();
+      // Playwright 的 multipart 取不到，简单读 headers + url 验证
+      captured = { accountId: undefined, productId: undefined };
+      // 用 contains 判断 multipart 里有 accountId / productId 字段
+      if (form?.includes("honor")) captured.accountId = "honor";
+      if (form?.includes("p-magic")) captured.productId = "p-magic";
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, document: fakeDoc }),
+      });
+    });
+
+    await page.goto("/settings");
+    await page.getByRole("tab", { name: "产品库" }).click();
+
+    // 触发上传
+    const fileInput = page.locator(`[data-testid="product-docs-p-magic"] input[type="file"]`);
+    await fileInput.setInputFiles({
+      name: "magic7-spec.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.4 fake content"),
+    });
+
+    // 等 mock 返回
+    await expect.poll(() => captured?.accountId).toBe("honor");
+    expect(captured?.productId).toBe("p-magic");
+
+    // UI 显示新文档
+    await expect(page.getByText("magic7-spec.pdf")).toBeVisible();
+
+    // 展开摘要
+    await page.getByText("查看摘要").click();
+    const docCard = page.locator('[data-testid="product-doc-doc-1"]');
+    await expect(docCard.getByText("AI 影像", { exact: true })).toBeVisible(); // chip
+    await expect(docCard.getByText("影像旗舰")).toBeVisible();
+    await expect(docCard.getByText("25-35 岁科技尝鲜者，重视拍照")).toBeVisible();
+  });
+
+  test("非允许的文件类型被前端 input.accept 限制", async ({ page }) => {
+    await seedBrandWithProduct(page);
+    await page.goto("/settings");
+    await page.getByRole("tab", { name: "产品库" }).click();
+    const fileInput = page.locator(`[data-testid="product-docs-p-magic"] input[type="file"]`);
+    const accept = await fileInput.getAttribute("accept");
+    expect(accept).toContain(".pdf");
+    expect(accept).toContain(".md");
+    expect(accept).toContain(".txt");
+    expect(accept).not.toContain(".docx");
+  });
+
+  test("删除文档：UI 立刻移除 + 调 /api/delete-product-doc", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "honor",
+              name: "荣耀官号",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀手机", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [
+                {
+                  id: "p-magic",
+                  name: "Magic7",
+                  description: "",
+                  sellingPoints: [],
+                  imagePaths: [],
+                  links: [],
+                  documents: [
+                    {
+                      id: "doc-existing",
+                      fileName: "old-spec.pdf",
+                      fileType: "pdf",
+                      fileUrl: "/uploads/product-docs/honor/p-magic/doc-existing-old-spec.pdf",
+                      sizeBytes: 1000,
+                      extracted: {
+                        sellingPoints: [], targetAudience: "", keyFeatures: [],
+                        positioning: "", scenarios: [], summary: "old",
+                      },
+                      uploadedAt: "2026-05-19T00:00:00Z",
+                    },
+                  ],
+                },
+              ],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [], scripts: [], trends: [], trendsDate: null,
+              reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "honor",
+        })
+      );
+    });
+
+    let deleteCalled = false;
+    let deletedUrl = "";
+    await page.route("/api/delete-product-doc", async (route) => {
+      const body = await route.request().postDataJSON();
+      deleteCalled = true;
+      deletedUrl = body.fileUrl;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true }),
+      });
+    });
+
+    await page.goto("/settings");
+    await page.getByRole("tab", { name: "产品库" }).click();
+
+    await expect(page.getByText("old-spec.pdf")).toBeVisible();
+    await page.getByRole("button", { name: "删除" }).filter({ hasText: /^删除$/ }).last().click();
+
+    // UI 移除
+    await expect(page.getByText("old-spec.pdf")).not.toBeVisible();
+    // API 已调
+    await expect.poll(() => deleteCalled).toBe(true);
+    expect(deletedUrl).toBe("/uploads/product-docs/honor/p-magic/doc-existing-old-spec.pdf");
+
+    // 保存后 localStorage 里也没了
+    await page.click("text=保存设置");
+    await expect(page.locator("text=已保存")).toBeVisible();
+    const after = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
+    expect(after.accounts[0].products[0].documents).toEqual([]);
   });
 });

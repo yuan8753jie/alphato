@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { saveAccount, getAccount } from "@/lib/store";
-import type { Account, Product, Persona, BenchmarkAccount, BrandMaterial, MaterialPurpose } from "@/lib/types";
+import type { Account, Product, Persona, BenchmarkAccount, BrandMaterial, MaterialPurpose, ProductDocument } from "@/lib/types";
 import { MATERIAL_PURPOSE_LABELS } from "@/lib/types";
 
 const emptyAccount: Account = {
@@ -100,6 +100,73 @@ export default function SetupPage() {
       ...prev,
       products: prev.products.filter((_, i) => i !== index),
     }));
+  }
+
+  // 文档管理
+  const [uploadingDocForProduct, setUploadingDocForProduct] = useState<number | null>(null);
+  const [expandedDocIds, setExpandedDocIds] = useState<Set<string>>(new Set());
+
+  function addDocToProduct(productIndex: number, doc: ProductDocument) {
+    setAccount((prev) => ({
+      ...prev,
+      products: prev.products.map((p, i) =>
+        i === productIndex ? { ...p, documents: [...(p.documents || []), doc] } : p
+      ),
+    }));
+  }
+
+  function removeDocFromProduct(productIndex: number, docId: string) {
+    setAccount((prev) => ({
+      ...prev,
+      products: prev.products.map((p, i) =>
+        i === productIndex
+          ? { ...p, documents: (p.documents || []).filter((d) => d.id !== docId) }
+          : p
+      ),
+    }));
+  }
+
+  async function handleProductDocUpload(productIndex: number, file: File) {
+    const product = account.products[productIndex];
+    if (!product?.id || !account.id) return;
+    setUploadingDocForProduct(productIndex);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("accountId", account.id);
+      formData.append("productId", product.id);
+      const res = await fetch("/api/extract-product-doc", { method: "POST", body: formData });
+      const data = await res.json();
+      if (data.success && data.document) {
+        addDocToProduct(productIndex, data.document as ProductDocument);
+      } else {
+        alert("文档解析失败：" + (data.error || "未知错误"));
+      }
+    } catch (err) {
+      alert("上传失败：" + String(err));
+    } finally {
+      setUploadingDocForProduct(null);
+    }
+  }
+
+  async function handleDocDelete(productIndex: number, doc: ProductDocument) {
+    // 先删服务器文件（失败不阻塞 UI 删除）
+    try {
+      await fetch("/api/delete-product-doc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileUrl: doc.fileUrl }),
+      });
+    } catch { /* ignore */ }
+    removeDocFromProduct(productIndex, doc.id);
+  }
+
+  function toggleDocExpanded(docId: string) {
+    setExpandedDocIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) next.delete(docId); else next.add(docId);
+      return next;
+    });
   }
 
   // Persona management
@@ -561,7 +628,7 @@ export default function SetupPage() {
                               onClick={() => {
                                 updateProduct(i, "imagePaths", product.imagePaths.filter((_, k) => k !== j));
                               }}
-                              className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-destructive text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                             >
                               ×
                             </button>
@@ -569,6 +636,123 @@ export default function SetupPage() {
                         ))}
                       </div>
                     )}
+
+                    {/* 产品文档 */}
+                    <div className="space-y-2 pt-2 border-t" data-testid={`product-docs-${product.id}`}>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">产品文档</Label>
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept=".pdf,.md,.markdown,.txt,application/pdf,text/markdown,text/plain"
+                            className="hidden"
+                            disabled={uploadingDocForProduct === i}
+                            onChange={async (e) => {
+                              const f = e.target.files?.[0];
+                              if (f) await handleProductDocUpload(i, f);
+                              e.target.value = "";
+                            }}
+                          />
+                          <span className="text-xs px-2.5 py-1 rounded border hover:bg-muted transition-colors inline-block">
+                            {uploadingDocForProduct === i ? "AI 解析中..." : "上传文档"}
+                          </span>
+                        </label>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">
+                        支持 PDF / Markdown / TXT，每个 ≤ 20MB。上传后 AI 自动提取卖点、受众、关键功能。
+                      </p>
+                      {(product.documents || []).length === 0 ? (
+                        <p className="text-[11px] text-muted-foreground italic">暂无文档</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {(product.documents || []).map((doc) => {
+                            const expanded = expandedDocIds.has(doc.id);
+                            return (
+                              <div key={doc.id} className="border rounded-md text-xs" data-testid={`product-doc-${doc.id}`}>
+                                <div className="flex items-center gap-2 p-2">
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-medium shrink-0 uppercase">
+                                    {doc.fileType}
+                                  </span>
+                                  <a
+                                    href={doc.fileUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex-1 truncate hover:underline"
+                                    title={doc.fileName}
+                                  >
+                                    {doc.fileName}
+                                  </a>
+                                  <button
+                                    onClick={() => toggleDocExpanded(doc.id)}
+                                    className="text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"
+                                  >
+                                    {expanded ? "收起" : "查看摘要"}
+                                  </button>
+                                  <button
+                                    onClick={() => handleDocDelete(i, doc)}
+                                    className="text-[10px] text-destructive hover:underline cursor-pointer"
+                                  >
+                                    删除
+                                  </button>
+                                </div>
+                                {expanded && (
+                                  <div className="px-2 pb-2 space-y-1.5 border-t pt-2 bg-muted/30">
+                                    {doc.extracted.positioning && (
+                                      <div>
+                                        <span className="font-semibold text-[10px] uppercase tracking-wider text-muted-foreground">定位</span>
+                                        <p className="text-[11px] mt-0.5">{doc.extracted.positioning}</p>
+                                      </div>
+                                    )}
+                                    {doc.extracted.targetAudience && (
+                                      <div>
+                                        <span className="font-semibold text-[10px] uppercase tracking-wider text-muted-foreground">受众</span>
+                                        <p className="text-[11px] mt-0.5">{doc.extracted.targetAudience}</p>
+                                      </div>
+                                    )}
+                                    {doc.extracted.sellingPoints.length > 0 && (
+                                      <div>
+                                        <span className="font-semibold text-[10px] uppercase tracking-wider text-muted-foreground">卖点</span>
+                                        <div className="flex flex-wrap gap-1 mt-0.5">
+                                          {doc.extracted.sellingPoints.map((sp, k) => (
+                                            <span key={k} className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px]">{sp}</span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {doc.extracted.keyFeatures.length > 0 && (
+                                      <div>
+                                        <span className="font-semibold text-[10px] uppercase tracking-wider text-muted-foreground">关键功能</span>
+                                        <div className="flex flex-wrap gap-1 mt-0.5">
+                                          {doc.extracted.keyFeatures.map((f, k) => (
+                                            <span key={k} className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px]">{f}</span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {doc.extracted.scenarios.length > 0 && (
+                                      <div>
+                                        <span className="font-semibold text-[10px] uppercase tracking-wider text-muted-foreground">使用场景</span>
+                                        <div className="flex flex-wrap gap-1 mt-0.5">
+                                          {doc.extracted.scenarios.map((s, k) => (
+                                            <span key={k} className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px]">{s}</span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {doc.extracted.summary && (
+                                      <div>
+                                        <span className="font-semibold text-[10px] uppercase tracking-wider text-muted-foreground">摘要</span>
+                                        <p className="text-[11px] mt-0.5 whitespace-pre-wrap leading-relaxed">{doc.extracted.summary}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </CardContent>
