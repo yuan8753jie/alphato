@@ -865,6 +865,137 @@ test.describe("阶段5: 视频引用产品图（Seedance 智能参考）", () =>
   });
 });
 
+test.describe("阶段8: 批量 N 轮生成选题", () => {
+  async function seedHonorEmpty(page: import("@playwright/test").Page) {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "honor",
+              name: "荣耀官号",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [
+                { id: "p-magic", name: "Magic8", description: "", sellingPoints: [], imagePaths: [], links: [], documents: [] },
+              ],
+              personas: [], benchmarkAccounts: [],
+              topics: [], scripts: [],
+              trends: [
+                { id: "tr1", title: "fake trend", description: "", category: "platform_hot", section: "global", source: "x", heatScore: 5, relevance: "", fetchedAt: "2026-05-21" },
+              ],
+              trendsDate: "2026-05-21",
+              reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "honor",
+        })
+      );
+    });
+  }
+
+  test("默认 ×1 文案为「生成选题」", async ({ page }) => {
+    await seedHonorEmpty(page);
+    await page.goto("/topics");
+    await expect(page.getByTestId("batch-rounds-1")).toBeVisible();
+    await expect(page.getByTestId("batch-rounds-3")).toBeVisible();
+    await expect(page.getByTestId("batch-rounds-5")).toBeVisible();
+    // 默认 ×1 → 文案"生成选题"
+    await expect(page.getByRole("button", { name: /^生成选题$/ }).last()).toBeVisible();
+  });
+
+  test("选 ×3 → 文案变为「生成 3 轮选题」", async ({ page }) => {
+    await seedHonorEmpty(page);
+    await page.goto("/topics");
+    await page.getByTestId("batch-rounds-3").click();
+    await expect(page.getByRole("button", { name: /生成 3 轮选题/ }).last()).toBeVisible();
+  });
+
+  test("×3 实际调 API 3 次，选题累加", async ({ page }) => {
+    await seedHonorEmpty(page);
+
+    let callCount = 0;
+    await page.route("/api/generate-topics", async (route) => {
+      callCount++;
+      const round = callCount;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          topics: [
+            { id: `t-r${round}-1`, title: `第${round}轮选题A`, type: "traffic", angle: "", description: "", relatedTrendIds: [], productIds: [], estimatedAppeal: "", status: "pending", createdAt: "2026-05-21" },
+            { id: `t-r${round}-2`, title: `第${round}轮选题B`, type: "trust", angle: "", description: "", relatedTrendIds: [], productIds: [], estimatedAppeal: "", status: "pending", createdAt: "2026-05-21" },
+          ],
+          selectedTrends: [],
+        }),
+      });
+    });
+
+    await page.goto("/topics");
+    await page.getByTestId("batch-rounds-3").click();
+    await page.getByRole("button", { name: /生成 3 轮选题/ }).last().click();
+
+    // 等 3 次调用完
+    await expect.poll(() => callCount, { timeout: 15000 }).toBe(3);
+
+    // 6 条选题都在
+    await expect(page.getByText("第1轮选题A")).toBeVisible();
+    await expect(page.getByText("第2轮选题A")).toBeVisible();
+    await expect(page.getByText("第3轮选题A")).toBeVisible();
+
+    // localStorage 里 6 条
+    const data = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
+    expect(data.accounts[0].topics.length).toBe(6);
+  });
+
+  test("批量中点「停止」中止后续轮，已生成的保留", async ({ page }) => {
+    await seedHonorEmpty(page);
+
+    let callCount = 0;
+    await page.route("/api/generate-topics", async (route) => {
+      callCount++;
+      const round = callCount;
+      // 第 1 轮快速返回，第 2 轮慢一点让用户有机会点停止
+      if (round === 2) await new Promise((r) => setTimeout(r, 1500));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          topics: [
+            { id: `t-r${round}`, title: `第${round}轮选题`, type: "traffic", angle: "", description: "", relatedTrendIds: [], productIds: [], estimatedAppeal: "", status: "pending", createdAt: "2026-05-21" },
+          ],
+          selectedTrends: [],
+        }),
+      });
+    });
+
+    await page.goto("/topics");
+    await page.getByTestId("batch-rounds-5").click();
+    await page.getByRole("button", { name: /生成 5 轮选题/ }).last().click();
+
+    // 等第 1 轮完
+    await expect(page.getByText("第1轮选题")).toBeVisible({ timeout: 8000 });
+
+    // 点停止
+    await page.getByRole("button", { name: "停止" }).click();
+
+    // 等一会，确认没有继续生成第 3、4、5 轮
+    await page.waitForTimeout(1500);
+    const finalCount = callCount;
+    expect(finalCount).toBeLessThan(5);
+
+    // 已生成的至少保留了一条
+    const data = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
+    expect(data.accounts[0].topics.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
 test.describe("阶段7: 空状态产品选择器", () => {
   test("无选题时显示产品选择器 + 按钮文案随选择变化", async ({ page }) => {
     await page.goto("/");

@@ -39,6 +39,9 @@ export default function TopicsPage() {
   // 产品筛选：null = 全部, "" = 通用（无绑定）, string = 具体产品 id
   const [filterProduct, setFilterProduct] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<"default" | "score">("default");
+  // 批量生成：N 轮，每轮独立调一次 API（基于不同热点子集 → 多样性）
+  const [batchRounds, setBatchRounds] = useState<number>(1);
+  const [currentRound, setCurrentRound] = useState<number>(0);
   const [selectedTrends, setSelectedTrends] = useState<SelectedTrend[]>([]);
   const [selectedTrendsMeta, setSelectedTrendsMetaState] = useState<SelectedTrendsMeta | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -81,50 +84,67 @@ export default function TopicsPage() {
     if (!account || trends.length === 0 || loading) return;
     const ac = new AbortController();
     setAbortController(ac);
-    setLoading("selecting");
     setError(null);
     setSelectedTrends([]);
 
+    // filterProduct 控制本次生成的产品聚焦
+    const focusProductId = filterProduct && filterProduct !== "" ? filterProduct : undefined;
+    const rounds = Math.max(1, batchRounds);
+
+    let accumulated = [...topics];
+    let totalNewThisBatch = 0;
+    let lastError: string | null = null;
+    const allSelected: SelectedTrend[] = [];
+
     try {
-      // filterProduct 控制本次生成的产品聚焦：
-      //   null  → 不聚焦，AI 自己按选题挑产品
-      //   ""    → 通用选题，不绑任何产品（不传 focusProductId）
-      //   id    → 全部选题都为该产品生成
-      const focusProductId = filterProduct && filterProduct !== "" ? filterProduct : undefined;
-      const res = await fetch("/api/generate-topics", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account, trends, focusProductId }),
-        signal: ac.signal,
-      });
-      const data = await res.json();
+      for (let i = 0; i < rounds; i++) {
+        if (ac.signal.aborted) break;
+        setCurrentRound(i + 1);
+        setLoading("selecting");
 
-      // Show selected trends from Phase 1
-      if (data.selectedTrends?.length > 0) {
-        setSelectedTrends(data.selectedTrends);
-      }
+        const res = await fetch("/api/generate-topics", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account, trends, focusProductId }),
+          signal: ac.signal,
+        });
+        const data = await res.json();
 
-      if (data.success && data.topics?.length > 0) {
-        const newTopics = [...data.topics, ...topics];
-        setTopics(newTopics);
-        saveTopics(newTopics);
+        if (data.selectedTrends?.length > 0) {
+          allSelected.push(...data.selectedTrends);
+          setSelectedTrends([...allSelected]);
+        }
 
-        // Persist Phase 1 selection + generation metadata
-        const meta: SelectedTrendsMeta = {
-          selectedTrends: data.selectedTrends || [],
-          trendsPoolSize: trends.length,
-          topicsGenerated: data.topics.length,
-          generatedAt: new Date().toISOString(),
-        };
-        setSelectedTrendsMetaState(meta);
-        saveSelectedTrendsMeta(meta);
-      } else {
-        setError(data.error || "选题生成失败");
+        if (data.success && data.topics?.length > 0) {
+          // 每轮的选题前置插入，让最新一轮在最上
+          accumulated = [...data.topics, ...accumulated];
+          totalNewThisBatch += data.topics.length;
+          setTopics(accumulated);
+          saveTopics(accumulated);
+
+          const meta: SelectedTrendsMeta = {
+            selectedTrends: allSelected,
+            trendsPoolSize: trends.length,
+            topicsGenerated: totalNewThisBatch,
+            generatedAt: new Date().toISOString(),
+          };
+          setSelectedTrendsMetaState(meta);
+          saveSelectedTrendsMeta(meta);
+        } else if (i === 0) {
+          // 首轮就失败：报错退出
+          lastError = data.error || "选题生成失败";
+          break;
+        }
+        // 后续轮失败：保留前面的成果，静默跳过
       }
     } catch (err) {
-      setError("请求失败：" + String(err));
+      if ((err as Error).name !== "AbortError") {
+        lastError = "请求失败：" + String(err);
+      }
     } finally {
       setLoading(null);
+      setCurrentRound(0);
+      if (lastError) setError(lastError);
     }
   }
 
@@ -360,19 +380,42 @@ export default function TopicsPage() {
             const focusName = filterProduct && filterProduct !== ""
               ? productNameById.get(filterProduct)
               : null;
-            const generateLabel = loading === "selecting"
-              ? "分析热点中..."
-              : loading === "generating"
-                ? "生成选题中..."
-                : focusName
-                  ? `为「${focusName}」生成选题`
-                  : filterProduct === ""
-                    ? "生成通用选题"
-                    : "生成选题";
+            const focusFragment = focusName
+              ? `为「${focusName}」生成`
+              : filterProduct === ""
+                ? "生成通用"
+                : "生成";
+            const generateLabel = loading
+              ? batchRounds > 1
+                ? `第 ${currentRound}/${batchRounds} 轮中...`
+                : loading === "selecting"
+                  ? "分析热点中..."
+                  : "生成选题中..."
+              : batchRounds > 1
+                ? `${focusFragment} ${batchRounds} 轮选题`
+                : `${focusFragment}选题`.replace(/^生成/, "生成") || "生成选题";
             return (
-              <Button onClick={generateTopics} disabled={loading !== null} size="sm">
-                {generateLabel}
-              </Button>
+              <>
+                {/* 轮次切换 */}
+                {!loading && (
+                  <div className="flex items-center gap-1" data-testid="batch-rounds-picker">
+                    <span className="text-[10px] text-muted-foreground mr-0.5">轮次</span>
+                    {[1, 3, 5].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setBatchRounds(n)}
+                        className={`text-xs px-2 py-1 rounded-md transition-colors cursor-pointer ${batchRounds === n ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+                        data-testid={`batch-rounds-${n}`}
+                      >
+                        ×{n}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <Button onClick={generateTopics} disabled={loading !== null} size="sm">
+                  {generateLabel}
+                </Button>
+              </>
             );
           })()}
           {topics.length > 0 && (
@@ -913,17 +956,38 @@ export default function TopicsPage() {
             const focusName = filterProduct && filterProduct !== ""
               ? productNameById.get(filterProduct)
               : null;
+            const focusFragment = focusName
+              ? `为「${focusName}」生成`
+              : filterProduct === ""
+                ? "生成通用"
+                : "生成";
             const label = loading
-              ? "生成中..."
-              : focusName
-                ? `为「${focusName}」生成选题`
-                : filterProduct === ""
-                  ? "生成通用选题"
-                  : "生成选题";
+              ? batchRounds > 1
+                ? `第 ${currentRound}/${batchRounds} 轮中...`
+                : "生成中..."
+              : batchRounds > 1
+                ? `${focusFragment} ${batchRounds} 轮选题`
+                : `${focusFragment}选题`;
             return (
-              <Button onClick={generateTopics} disabled={loading !== null} size="lg">
-                {label}
-              </Button>
+              <div className="flex items-center justify-center gap-3 flex-wrap">
+                {!loading && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-muted-foreground mr-0.5">轮次</span>
+                    {[1, 3, 5].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setBatchRounds(n)}
+                        className={`text-xs px-2 py-1 rounded-md transition-colors cursor-pointer ${batchRounds === n ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+                      >
+                        ×{n}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <Button onClick={generateTopics} disabled={loading !== null} size="lg">
+                  {label}
+                </Button>
+              </div>
             );
           })() : (
             <Button onClick={() => router.push("/discover")} size="lg">
