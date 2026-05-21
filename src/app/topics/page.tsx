@@ -869,18 +869,63 @@ export default function TopicsPage() {
           </div>
         </div>
       ) : (
-        <div className="text-center py-20">
+        <div className="text-center py-20 max-w-xl mx-auto">
           <h3 className="text-lg font-medium mb-2">选题池为空</h3>
-          <p className="text-sm text-muted-foreground mb-4">
+          <p className="text-sm text-muted-foreground mb-6">
             {trends.length > 0
               ? `热点池有 ${trends.length} 条热点，AI 会先筛选最相关的，再生成选题`
               : "请先到「发现」页面抓取热点"}
           </p>
-          {trends.length > 0 ? (
-            <Button onClick={generateTopics} disabled={loading !== null} size="lg">
-              {loading ? "生成中..." : "生成选题"}
-            </Button>
-          ) : (
+
+          {/* 空状态下的产品选择 — 让首次生成也能 focus 到某款产品 */}
+          {trends.length > 0 && account.products.length > 0 && (
+            <div className="mb-6 px-4 py-3 rounded-lg bg-muted/30 border" data-testid="empty-state-product-picker">
+              <p className="text-xs text-muted-foreground mb-2">
+                本次为哪款产品生成选题？
+              </p>
+              <div className="flex items-center gap-2 flex-wrap justify-center">
+                <button
+                  onClick={() => setFilterProduct(null)}
+                  className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterProduct === null ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+                >
+                  AI 自动判断（混合品牌+产品）
+                </button>
+                <button
+                  onClick={() => setFilterProduct("")}
+                  className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterProduct === "" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+                >
+                  通用（不绑产品）
+                </button>
+                {account.products.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => setFilterProduct(p.id)}
+                    className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterProduct === p.id ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {trends.length > 0 ? (() => {
+            const focusName = filterProduct && filterProduct !== ""
+              ? productNameById.get(filterProduct)
+              : null;
+            const label = loading
+              ? "生成中..."
+              : focusName
+                ? `为「${focusName}」生成选题`
+                : filterProduct === ""
+                  ? "生成通用选题"
+                  : "生成选题";
+            return (
+              <Button onClick={generateTopics} disabled={loading !== null} size="lg">
+                {label}
+              </Button>
+            );
+          })() : (
             <Button onClick={() => router.push("/discover")} size="lg">
               去发现热点 →
             </Button>

@@ -865,6 +865,111 @@ test.describe("阶段5: 视频引用产品图（Seedance 智能参考）", () =>
   });
 });
 
+test.describe("阶段7: 空状态产品选择器", () => {
+  test("无选题时显示产品选择器 + 按钮文案随选择变化", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "honor",
+              name: "荣耀官号",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [
+                { id: "p-400", name: "荣耀400", description: "", sellingPoints: [], imagePaths: [], links: [], documents: [] },
+                { id: "p-v5", name: "荣耀V5", description: "", sellingPoints: [], imagePaths: [], links: [], documents: [] },
+              ],
+              personas: [],
+              benchmarkAccounts: [],
+              topics: [],       // 空 — 触发空状态
+              scripts: [],
+              trends: [
+                { id: "tr1", title: "fake trend", description: "", category: "platform_hot", section: "global", source: "x", heatScore: 5, relevance: "", fetchedAt: "2026-05-21" },
+              ],
+              trendsDate: "2026-05-21",
+              reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "honor",
+        })
+      );
+    });
+
+    await page.goto("/topics");
+
+    const picker = page.getByTestId("empty-state-product-picker");
+    await expect(picker).toBeVisible();
+    await expect(picker.getByText("AI 自动判断（混合品牌+产品）")).toBeVisible();
+    await expect(picker.getByText("通用（不绑产品）")).toBeVisible();
+    await expect(picker.getByText("荣耀400")).toBeVisible();
+    await expect(picker.getByText("荣耀V5")).toBeVisible();
+
+    // 默认 AI 自动 → 按钮文案 "生成选题"
+    // header 和空状态各有一个 按钮（同步），用 .last() 锁定空状态那个
+    await expect(page.getByRole("button", { name: /^生成选题$/ }).last()).toBeVisible();
+
+    // 选 V5 → 文案变
+    await picker.getByText("荣耀V5").click();
+    await expect(page.getByRole("button", { name: /为「荣耀V5」生成选题/ }).last()).toBeVisible();
+
+    // 选通用 → 文案变
+    await picker.getByText("通用（不绑产品）").click();
+    await expect(page.getByRole("button", { name: /生成通用选题/ }).last()).toBeVisible();
+  });
+
+  test("空状态选了产品 → 生成请求带上 focusProductId", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "honor",
+              name: "荣耀",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [
+                { id: "p-magic", name: "Magic8", description: "", sellingPoints: [], imagePaths: [], links: [], documents: [] },
+              ],
+              personas: [], benchmarkAccounts: [],
+              topics: [], scripts: [],
+              trends: [
+                { id: "tr1", title: "fake trend", description: "", category: "platform_hot", section: "global", source: "x", heatScore: 5, relevance: "", fetchedAt: "2026-05-21" },
+              ],
+              trendsDate: "2026-05-21",
+              reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "honor",
+        })
+      );
+    });
+
+    const captured: { body: { focusProductId?: string } | null } = { body: null };
+    await page.route("/api/generate-topics", async (route) => {
+      captured.body = await route.request().postDataJSON();
+      await route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({ success: true, topics: [], selectedTrends: [] }),
+      });
+    });
+
+    await page.goto("/topics");
+    await page.getByTestId("empty-state-product-picker").getByText("Magic8").click();
+    await page.getByRole("button", { name: /为「Magic8」生成选题/ }).last().click();
+
+    await expect.poll(() => captured.body?.focusProductId).toBe("p-magic");
+  });
+});
+
 test.describe("阶段6: 视频本地持久化", () => {
   async function seedHonorWithScript(page: import("@playwright/test").Page) {
     await page.goto("/");
