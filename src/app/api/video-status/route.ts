@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
         taskId: result.taskId,
         status,
         statusMsg: result.statusMsg,
+        errorCode: result.errorCode,
         videoUrl,
       },
     });

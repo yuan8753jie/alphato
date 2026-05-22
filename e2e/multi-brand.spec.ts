@@ -865,6 +865,101 @@ test.describe("阶段5: 视频引用产品图（Seedance 智能参考）", () =>
   });
 });
 
+test.describe("阶段10: 视频生成失败展示", () => {
+  async function seedReadyToGenerate(page: import("@playwright/test").Page) {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "h",
+              name: "荣耀",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [{ id: "p", name: "Magic8", description: "", sellingPoints: [], imagePaths: [], links: [], documents: [] }],
+              personas: [], benchmarkAccounts: [],
+              topics: [{ id: "t", title: "测试", angle: "", description: "", type: "conversion", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: ["p"], createdAt: "2026-05-22" }],
+              scripts: [{ id: "s", topicId: "t", productId: "p", variant: "free-voiceover", scenes: [{ sceneNumber: 1, visual: "v", audio: "a", text: "t", duration: "3" }], fullText: "test", createdAt: "2026-05-22" }],
+              trends: [], trendsDate: null, reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "h",
+        })
+      );
+    });
+  }
+
+  test("Seedance 版权拦截 → UI 显示具体提示 + 重试按钮", async ({ page }) => {
+    await seedReadyToGenerate(page);
+
+    await page.route("/api/generate-video", async (route) => {
+      await route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({
+          success: true, task: { taskId: "fail-task" },
+          prompt: "p", referenceImages: [], referenceImagesUsed: 0,
+        }),
+      });
+    });
+    await page.route("/api/video-status*", async (route) => {
+      await route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          task: {
+            taskId: "fail-task",
+            status: "failed",
+            errorCode: "OutputVideoSensitiveContentDetected.PolicyViolation",
+            statusMsg: "The request failed because the output video may be related to copyright restrictions",
+          },
+        }),
+      });
+    });
+
+    await page.goto("/topics/t");
+    await page.getByRole("button", { name: /生成视频/ }).click();
+
+    // 错误横幅出现
+    const banner = page.getByTestId("video-error-banner");
+    await expect(banner).toBeVisible({ timeout: 15000 });
+    await expect(banner.getByText("视频生成失败")).toBeVisible();
+    await expect(banner.getByText(/Seedance 风控判定输出可能涉及版权/)).toBeVisible();
+    await expect(banner.getByText(/OutputVideoSensitiveContentDetected/)).toBeVisible();
+    await expect(banner.getByRole("button", { name: "重新尝试" })).toBeVisible();
+  });
+
+  test("通用错误码显示原始 message", async ({ page }) => {
+    await seedReadyToGenerate(page);
+
+    await page.route("/api/generate-video", async (route) => {
+      await route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({ success: true, task: { taskId: "weird-task" }, prompt: "p", referenceImages: [], referenceImagesUsed: 0 }),
+      });
+    });
+    await page.route("/api/video-status*", async (route) => {
+      await route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          task: { taskId: "weird-task", status: "failed", errorCode: "InternalError", statusMsg: "something exploded" },
+        }),
+      });
+    });
+
+    await page.goto("/topics/t");
+    await page.getByRole("button", { name: /生成视频/ }).click();
+
+    const banner = page.getByTestId("video-error-banner");
+    await expect(banner).toBeVisible({ timeout: 15000 });
+    await expect(banner.getByText("something exploded")).toBeVisible();
+  });
+});
+
 test.describe("阶段9: 生成历史页", () => {
   async function seedHistoryData(page: import("@playwright/test").Page) {
     await page.goto("/");

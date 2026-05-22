@@ -25,7 +25,8 @@ export interface SeedanceVideoTask {
   taskId: string;
   status: SeedanceStatus;
   videoUrl?: string;
-  statusMsg?: string;
+  statusMsg?: string;     // error.message，如"The request failed because..."
+  errorCode?: string;     // error.code，如"OutputVideoSensitiveContentDetected.PolicyViolation"
 }
 
 // ============================================================
@@ -208,12 +209,13 @@ export async function getSeedanceTaskStatus(taskId: string): Promise<SeedanceVid
     id?: string;
     status?: string;
     content?: { video_url?: string };
-    error?: { message?: string };
+    error?: { message?: string; code?: string };
   };
   return {
     taskId: data.id || taskId,
     status: parseStatus(data.status),
     videoUrl: data.content?.video_url,
     statusMsg: data.error?.message,
+    errorCode: data.error?.code,
   };
 }

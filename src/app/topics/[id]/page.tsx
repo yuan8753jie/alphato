@@ -51,7 +51,9 @@ export default function TopicDetailPage() {
     status?: string;
     url?: string;
     loading: boolean;
-  }>>({} as Record<VariantKey, { taskId?: string; status?: string; url?: string; loading: boolean }>);
+    error?: string;       // 人话错误描述，用于 UI 展示
+    errorCode?: string;   // 原始 Seedance 错误码，用于分类
+  }>>({} as Record<VariantKey, { taskId?: string; status?: string; url?: string; loading: boolean; error?: string; errorCode?: string }>);
 
   useEffect(() => {
     const acc = getAccount();
@@ -159,7 +161,7 @@ export default function TopicDetailPage() {
     finally { setGeneratingScene(null); }
   }
 
-  function updateVideoState(tab: VariantKey, updates: Partial<{ taskId: string; status: string; url: string; loading: boolean }>) {
+  function updateVideoState(tab: VariantKey, updates: Partial<{ taskId: string; status: string; url: string; loading: boolean; error: string; errorCode: string }>) {
     setVideoStates((prev) => ({
       ...prev,
       [tab]: { ...prev[tab], ...updates },
@@ -170,7 +172,11 @@ export default function TopicDetailPage() {
     const tab = activeTab;
     const script = scripts[tab];
     if (!script?.scenes) return;
-    updateVideoState(tab, { loading: true, status: "提交视频生成...", url: undefined });
+    // 重试时清掉上一轮的错误
+    setVideoStates((prev) => ({
+      ...prev,
+      [tab]: { loading: true, status: "提交视频生成...", url: undefined, error: undefined, errorCode: undefined },
+    }));
 
     try {
       // 当前选中产品（跟脚本主推产品一致）
@@ -231,14 +237,42 @@ export default function TopicDetailPage() {
         if (data.task?.status === "succeed" && data.task.videoUrl) {
           return data.task.videoUrl;
         } else if (data.task?.status === "failed") {
-          updateVideoState(tab, { status: "视频生成失败", loading: false });
+          const errorCode: string | undefined = data.task?.errorCode;
+          const statusMsg: string | undefined = data.task?.statusMsg;
+          const friendly = friendlyVideoError(errorCode, statusMsg);
+          updateVideoState(tab, {
+            status: "视频生成失败",
+            loading: false,
+            error: friendly,
+            errorCode,
+          });
           return null;
         }
         updateVideoState(tab, { status: data.task?.status === "processing" ? "视频生成中..." : "排队中..." });
       } catch { /* retry */ }
     }
-    updateVideoState(tab, { status: "超时", loading: false });
+    updateVideoState(tab, {
+      status: "超时",
+      loading: false,
+      error: "视频生成超过 10 分钟，请重试或换用 less 张参考图。",
+    });
     return null;
+  }
+
+  // Seedance 错误码 → 用户友好描述
+  function friendlyVideoError(code: string | undefined, msg: string | undefined): string {
+    if (!code && !msg) return "生成失败，请重试";
+    const c = code || "";
+    if (c.includes("Sensitive") || c.includes("PolicyViolation") || c.includes("Copyright")) {
+      return "Seedance 风控判定输出可能涉及版权（多张高清品牌产品图易触发）。建议：少选几张参考图（试试 2-3 张），或换更抽象的角度（不要全是产品本体特写）。";
+    }
+    if (c.includes("Image") && (c.includes("Fetch") || c.includes("NotFound"))) {
+      return "Seedance 无法访问参考图。如果是本地上传的图，确认图床/OSS 公网可达。";
+    }
+    if (c.includes("InvalidParameter")) {
+      return `参数错误：${msg || c}`;
+    }
+    return msg || `生成失败（${c || "未知"}）`;
   }
 
   if (!topic || !account) return null;
@@ -548,6 +582,28 @@ export default function TopicDetailPage() {
                     <div className="text-center py-8">
                       <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                       <p className="text-sm text-muted-foreground">{vs.status}</p>
+                    </div>
+                  ) : vs.error ? (
+                    <div className="py-4 px-3 rounded-md bg-destructive/5 border border-destructive/30 text-sm" data-testid="video-error-banner">
+                      <div className="flex items-start gap-2">
+                        <span className="text-destructive shrink-0">⚠</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-destructive">视频生成失败</p>
+                          <p className="text-foreground/80 mt-1 text-xs leading-relaxed">{vs.error}</p>
+                          {vs.errorCode && (
+                            <p className="text-muted-foreground mt-1 text-[10px] font-mono">code: {vs.errorCode}</p>
+                          )}
+                          <Button
+                            onClick={generateVideo}
+                            size="sm"
+                            variant="outline"
+                            className="mt-2 h-7 text-xs cursor-pointer"
+                            disabled={vs.loading}
+                          >
+                            重新尝试
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <p className="text-sm text-muted-foreground text-center py-4">基于当前 tab 的分镜生成视频</p>
