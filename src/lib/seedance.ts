@@ -150,12 +150,16 @@ export async function createSeedanceVideo(params: CreateSeedanceVideoParams): Pr
   if (params.referenceImages) refImages.push(...params.referenceImages);
   const refVideos: string[] = params.referenceVideos || [];
 
+  // Seedance 2.0 智能参考模式（多图）：每个 image_url / video_url 必须带 role 字段
+  //   role: "reference_image" — 智能参考图（最多 9 张）
+  //   role: "reference_video" — 智能参考视频（最多 3 个）
+  // 注意：first_frame / last_frame 与 reference_* 互斥，不能混用
   const content: Array<Record<string, unknown>> = [{ type: "text", text: params.prompt }];
   for (const url of refImages) {
-    content.push({ type: "image_url", image_url: { url } });
+    content.push({ type: "image_url", image_url: { url }, role: "reference_image" });
   }
   for (const url of refVideos) {
-    content.push({ type: "video_url", video_url: { url } });
+    content.push({ type: "video_url", video_url: { url }, role: "reference_video" });
   }
 
   const body: Record<string, unknown> = {
