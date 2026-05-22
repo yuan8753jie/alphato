@@ -20,6 +20,7 @@ import {
   Plus,
   Trash2,
   Video,
+  History,
 } from "lucide-react";
 import type { Account } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ const NAV_SECTIONS = [
   {
     title: "资源",
     items: [
+      { href: "/history", label: "生成历史", icon: History },
       { href: "/assets", label: "素材库", icon: FolderOpen },
       { href: "/analytics", label: "数据", icon: BarChart3 },
     ],

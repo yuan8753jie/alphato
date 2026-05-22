@@ -201,8 +201,11 @@ export interface Script {
   notes?: string;
   concept?: string;
   // 视频成片
-  videoUrl?: string;               // 本地保存路径，如 /uploads/videos/<taskId>.mp4
+  videoUrl?: string;               // OSS / CDN URL，永不过期
   videoTaskId?: string;            // Seedance task id，溯源用
+  videoPrompt?: string;            // 生成时实际发给 Seedance 的完整 prompt（快照）
+  videoReferenceImages?: string[]; // 生成时使用的参考图 URL 列表（快照）
+  videoGeneratedAt?: string;       // 视频生成完成的时间戳
   createdAt: string;
 }
 

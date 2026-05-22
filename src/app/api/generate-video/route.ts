@@ -91,7 +91,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       task,
+      prompt,                                     // 客户端保存为快照
       referenceImagesUsed: normalized.length,
+      referenceImages: normalized,                // 实际发给 Seedance 的参考图 URL，供历史页用
       referenceImagesRejected: rejectedNonHttp.length,
     });
   } catch (err) {

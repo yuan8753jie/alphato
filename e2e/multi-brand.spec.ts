@@ -865,6 +865,205 @@ test.describe("阶段5: 视频引用产品图（Seedance 智能参考）", () =>
   });
 });
 
+test.describe("阶段9: 生成历史页", () => {
+  async function seedHistoryData(page: import("@playwright/test").Page) {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "honor",
+              name: "荣耀官号",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [
+                { id: "p-magic", name: "Magic8 Pro", description: "", sellingPoints: [], imagePaths: [], links: [], documents: [] },
+                { id: "p-x20", name: "荣耀 X20", description: "", sellingPoints: [], imagePaths: [], links: [], documents: [] },
+              ],
+              personas: [], benchmarkAccounts: [],
+              topics: [
+                { id: "topic-a", title: "Magic8 测评", angle: "", description: "", type: "conversion", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: ["p-magic"], createdAt: "2026-05-20" },
+                { id: "topic-b", title: "X20 跑酷", angle: "", description: "", type: "traffic", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: ["p-x20"], createdAt: "2026-05-20" },
+              ],
+              scripts: [
+                // 一条完整快照（有 prompt + 参考图）
+                {
+                  id: "script-1",
+                  topicId: "topic-a",
+                  productId: "p-magic",
+                  variant: "free-voiceover",
+                  label: "稳健·口播",
+                  title: "Magic8 真实测评",
+                  hook: "每次记录精彩，都被抖成浆糊？",
+                  scenes: [{ sceneNumber: 1, shotType: "特写", visual: "金色机身镜头逐渐拉近", audio: "电音节拍", text: "看这色泽", duration: "3" }],
+                  fullText: "test",
+                  totalDuration: "12",
+                  videoUrl: "https://videomixer-files.tezign.com/alphato/videos/script-1/fake.mp4",
+                  videoTaskId: "cgt-fake-1",
+                  videoPrompt: "主体 Magic8 Pro（已附 9 张该产品真实参考图）。请严格按照参考图呈现产品的机身颜色...",
+                  videoReferenceImages: [
+                    "https://videomixer-files.tezign.com/alphato/product-images/honor/p-magic/img1.png",
+                    "https://videomixer-files.tezign.com/alphato/product-images/honor/p-magic/img2.png",
+                  ],
+                  videoGeneratedAt: "2026-05-22T10:00:00Z",
+                  createdAt: "2026-05-22T09:50:00Z",
+                },
+                // 一条没视频的脚本（不该出现在历史里）
+                {
+                  id: "script-2",
+                  topicId: "topic-a",
+                  productId: "p-magic",
+                  variant: "creative-voiceover",
+                  scenes: [],
+                  fullText: "",
+                  createdAt: "2026-05-22T11:00:00Z",
+                },
+                // 另一条有视频但属于不同产品
+                {
+                  id: "script-3",
+                  topicId: "topic-b",
+                  productId: "p-x20",
+                  variant: "creative-music",
+                  scenes: [],
+                  fullText: "",
+                  videoUrl: "https://videomixer-files.tezign.com/alphato/videos/script-3/fake.mp4",
+                  videoTaskId: "cgt-fake-3",
+                  videoGeneratedAt: "2026-05-22T08:00:00Z",
+                  createdAt: "2026-05-22T07:50:00Z",
+                },
+              ],
+              trends: [], trendsDate: null,
+              reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "honor",
+        })
+      );
+    });
+  }
+
+  test("历史页列出所有有视频的脚本，无视频的不出现", async ({ page }) => {
+    await seedHistoryData(page);
+    await page.goto("/history");
+
+    await expect(page.locator("h1")).toContainText("生成历史");
+    // 头部统计
+    await expect(page.getByText("累计生成 2 条视频", { exact: false })).toBeVisible();
+
+    // script-1 和 script-3 都在；script-2 (无视频) 不出现
+    await expect(page.getByText("Magic8 真实测评")).toBeVisible();
+    await expect(page.locator("video")).toHaveCount(2);
+  });
+
+  test("按产品筛选：只看 Magic8 Pro 的", async ({ page }) => {
+    await seedHistoryData(page);
+    await page.goto("/history");
+
+    await page.getByRole("button", { name: /Magic8 Pro \(1\)/ }).click();
+    await expect(page.locator("video")).toHaveCount(1);
+    await expect(page.getByText("Magic8 真实测评")).toBeVisible();
+  });
+
+  test("展开详情：看到 prompt 快照 + 参考图 + 分镜", async ({ page }) => {
+    await seedHistoryData(page);
+    await page.goto("/history");
+
+    await page.getByRole("button", { name: "详情" }).first().click();
+
+    // prompt 快照
+    await expect(page.getByText("发送给 Seedance 的完整 prompt")).toBeVisible();
+    await expect(page.getByText(/已附 9 张该产品真实参考图/)).toBeVisible();
+
+    // 参考图（2 张缩略图）
+    await expect(page.getByText("参考图（2 张）")).toBeVisible();
+
+    // 分镜
+    await expect(page.getByText("分镜快照（1 个）")).toBeVisible();
+    await expect(page.getByText("金色机身镜头逐渐拉近")).toBeVisible();
+
+    // taskId 溯源
+    await expect(page.getByText("cgt-fake-1")).toBeVisible();
+  });
+
+  test("生成视频后 Script 上落了 prompt 快照", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "h",
+              name: "荣耀",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [{ id: "p-m", name: "Magic8", description: "", sellingPoints: [], imagePaths: [], links: [], documents: [] }],
+              personas: [], benchmarkAccounts: [],
+              topics: [{ id: "topic-x", title: "测试", angle: "", description: "", type: "conversion", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: ["p-m"], createdAt: "2026-05-22" }],
+              scripts: [{ id: "script-x", topicId: "topic-x", productId: "p-m", variant: "free-voiceover", scenes: [{ sceneNumber: 1, visual: "v", audio: "a", text: "t", duration: "3" }], fullText: "test", createdAt: "2026-05-22" }],
+              trends: [], trendsDate: null, reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "h",
+        })
+      );
+    });
+
+    await page.route("/api/generate-video", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          task: { taskId: "fake-task-7" },
+          prompt: "主体 Magic8（已附 2 张该产品真实参考图）...完整 prompt...",
+          referenceImages: [
+            "https://example.com/a.png",
+            "https://example.com/b.png",
+          ],
+          referenceImagesUsed: 2,
+        }),
+      });
+    });
+    let pollCount = 0;
+    await page.route("/api/video-status*", async (route) => {
+      pollCount++;
+      const body = pollCount === 1
+        ? { success: true, task: { taskId: "fake-task-7", status: "processing" } }
+        : { success: true, task: { taskId: "fake-task-7", status: "succeed", videoUrl: "https://videomixer-files.tezign.com/alphato/videos/fake.mp4" } };
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    });
+
+    await page.goto("/topics/topic-x");
+    await page.getByRole("button", { name: /生成视频/ }).click();
+
+    // 等成片落到 Script
+    await expect.poll(
+      async () => {
+        const data = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
+        const s = data.accounts[0].scripts.find((x: { id: string }) => x.id === "script-x");
+        return s?.videoUrl;
+      },
+      { timeout: 20000, intervals: [1000, 2000] }
+    ).toBeTruthy();
+
+    const data = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
+    const s = data.accounts[0].scripts.find((x: { id: string }) => x.id === "script-x");
+    expect(s.videoPrompt).toContain("已附 2 张该产品真实参考图");
+    expect(s.videoReferenceImages).toEqual([
+      "https://example.com/a.png",
+      "https://example.com/b.png",
+    ]);
+    expect(s.videoGeneratedAt).toBeTruthy();
+  });
+});
+
 test.describe("阶段8: 批量 N 轮生成选题", () => {
   async function seedHonorEmpty(page: import("@playwright/test").Page) {
     await page.goto("/");

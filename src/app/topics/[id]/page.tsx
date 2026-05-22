@@ -201,11 +201,17 @@ export default function TopicDetailPage() {
 
       updateVideoState(tab, { url: videoUrl, status: "完成", loading: false });
 
-      // 持久化：把视频路径 + taskId 写回 Script，刷新页面也能看
-      // 后端的 video-status 已经把视频拉到 /uploads/videos/<taskId>.mp4，
-      // 这里只是把 URL 落到 localStorage 里。
+      // 持久化：把视频成片 + 当时的 prompt / 参考图 / 时间戳全部快照到 Script
+      // —— 历史页直接从这些字段读
       if (script && script.id) {
-        const updatedScript = { ...script, videoUrl, videoTaskId: data.task.taskId };
+        const updatedScript = {
+          ...script,
+          videoUrl,
+          videoTaskId: data.task.taskId,
+          videoPrompt: data.prompt || undefined,
+          videoReferenceImages: Array.isArray(data.referenceImages) ? data.referenceImages : undefined,
+          videoGeneratedAt: new Date().toISOString(),
+        };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         saveScript(updatedScript as any);
         setScripts((prev) => ({ ...prev, [tab]: updatedScript }));
