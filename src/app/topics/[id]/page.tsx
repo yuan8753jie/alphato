@@ -503,14 +503,12 @@ export default function TopicDetailPage() {
                         <div className="flex gap-2 flex-wrap" data-testid="ref-images-grid">
                           {availableImages.map((img, idx) => {
                             const selected = refImageUrls.includes(img);
-                            const isLocal = img.startsWith("/uploads/");
                             const atLimit = !selected && refImageUrls.length >= MAX_REF_IMAGES;
                             return (
                               <button
                                 key={idx}
                                 onClick={() => toggleRefImage(img)}
                                 disabled={atLimit}
-                                title={isLocal ? "自家上传图：本地 dev 环境 Seedance 访问不到，部署上线后生效" : ""}
                                 className={`relative w-14 h-14 rounded border-2 overflow-hidden transition-all cursor-pointer ${
                                   selected ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-foreground/40"
                                 } ${atLimit ? "opacity-40 cursor-not-allowed" : ""}`}
@@ -522,9 +520,6 @@ export default function TopicDetailPage() {
                                   <span className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-primary text-white text-[10px] flex items-center justify-center font-bold">
                                     {refImageUrls.indexOf(img) + 1}
                                   </span>
-                                )}
-                                {isLocal && (
-                                  <span className="absolute bottom-0 left-0 right-0 bg-amber-500/80 text-white text-[8px] text-center leading-tight py-px">本地</span>
                                 )}
                               </button>
                             );

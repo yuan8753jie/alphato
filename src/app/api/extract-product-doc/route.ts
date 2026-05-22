@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { geminiRequest, extractTextFromResponse } from "@/lib/gemini";
+import { uploadToOss } from "@/lib/oss";
 import type { ProductDocument, ProductDocumentExtracted, ProductDocumentFileType } from "@/lib/types";
 
 export const maxDuration = 120;
@@ -17,14 +17,6 @@ function detectFileType(fileName: string, mime: string): ProductDocumentFileType
   if (ext === ".txt" || mime.startsWith("text/")) return "text";
   if (mime.startsWith("image/")) return "image";
   return "other";
-}
-
-function safeFilename(name: string): string {
-  // 去掉危险字符；保留中文、字母、数字、点、横杠、下划线
-  return name
-    .replace(/[/\\?%*:|"<>]/g, "")
-    .replace(/\s+/g, "_")
-    .slice(0, 80);
 }
 
 const EXTRACT_INSTRUCTION = `你是一个产品分析专家，请仔细阅读以下产品文档，提取对内容营销有价值的信息。
@@ -95,17 +87,15 @@ export async function POST(req: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buf = Buffer.from(bytes);
 
-    // 1) 落盘：/public/uploads/product-docs/{accountId}/{productId}/{docId}-{safeName}
+    // 1) 上传到 OSS（公网可达，Seedance 等服务能直接拉）
     const docId = randomUUID();
-    const safeAcc = safeFilename(accountId);
-    const safeProd = safeFilename(productId);
-    const safeName = safeFilename(file.name) || `doc${ext}`;
-    const relDir = path.join("uploads", "product-docs", safeAcc, safeProd);
-    const absDir = path.join(process.cwd(), "public", relDir);
-    await mkdir(absDir, { recursive: true });
-    const finalName = `${docId}-${safeName}`;
-    await writeFile(path.join(absDir, finalName), buf);
-    const fileUrl = `/${path.join(relDir, finalName).split(path.sep).join("/")}`;
+    const { url: fileUrl } = await uploadToOss(
+      "product-docs",
+      [accountId, productId],
+      file.name,
+      buf,
+      file.type || undefined,
+    );
 
     // 2) 调 Gemini 提取
     let extractedRaw = "";

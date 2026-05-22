@@ -1,38 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
-import { mkdir, writeFile, access } from "fs/promises";
-import path from "path";
 import { getSeedanceTaskStatus } from "@/lib/seedance";
+import { uploadToOss } from "@/lib/oss";
 
-const VIDEOS_REL_DIR = path.join("uploads", "videos");
-
-async function fileExists(absPath: string): Promise<boolean> {
-  try {
-    await access(absPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
+// 内存级幂等缓存：同一 taskId 多次轮询只上传一次（cold start 会丢，不影响正确性）
+const persistedTaskUrls = new Map<string, string>();
 
 /**
- * Seedance 视频 URL 24 小时后过期。任务成功时把视频拉回本地，
- * 之后所有引用都用本地路径。幂等：本地已有就直接返回。
+ * Seedance 视频 URL 24 小时后过期。任务成功时把视频拉回本地、
+ * 上传到 OSS，之后所有引用都用 OSS 公网 URL。
  */
-async function persistVideoLocally(taskId: string, remoteUrl: string): Promise<string | null> {
-  const fileName = `${taskId}.mp4`;
-  const absDir = path.join(process.cwd(), "public", VIDEOS_REL_DIR);
-  const absPath = path.join(absDir, fileName);
-  const localUrl = `/${VIDEOS_REL_DIR.split(path.sep).join("/")}/${fileName}`;
-
-  if (await fileExists(absPath)) return localUrl;
+async function persistSeedanceVideo(taskId: string, remoteUrl: string): Promise<string | null> {
+  const cached = persistedTaskUrls.get(taskId);
+  if (cached) return cached;
 
   try {
     const res = await fetch(remoteUrl);
     if (!res.ok) return null;
     const buf = Buffer.from(await res.arrayBuffer());
-    await mkdir(absDir, { recursive: true });
-    await writeFile(absPath, buf);
-    return localUrl;
+    const { url } = await uploadToOss(
+      "videos",
+      taskId,
+      `${taskId}.mp4`,
+      buf,
+      "video/mp4",
+    );
+    persistedTaskUrls.set(taskId, url);
+    return url;
   } catch {
     return null;
   }
@@ -46,7 +39,6 @@ export async function GET(req: NextRequest) {
     }
 
     const result = await getSeedanceTaskStatus(taskId);
-    // Normalize status enum to what the topics UI expects
     const status =
       result.status === "succeeded"
         ? "succeed"
@@ -54,12 +46,12 @@ export async function GET(req: NextRequest) {
         ? "failed"
         : "processing";
 
-    // 成功了：落盘 + 把响应里的 videoUrl 替换为本地 URL
+    // 成功了：上传到 OSS，把响应里的 videoUrl 替换为 OSS URL
     let videoUrl = result.videoUrl;
     if (status === "succeed" && videoUrl) {
-      const local = await persistVideoLocally(result.taskId, videoUrl);
-      if (local) videoUrl = local;
-      // 下载失败时仍返回 Seedance URL 让前端能播放（24h 内还能用）
+      const ossUrl = await persistSeedanceVideo(result.taskId, videoUrl);
+      if (ossUrl) videoUrl = ossUrl;
+      // 上传失败时仍返回 Seedance URL，24h 内还能用
     }
 
     return NextResponse.json({

@@ -1399,7 +1399,7 @@ test.describe("阶段4: 产品文档（PDF / MD）", () => {
       );
     });
 
-    // Mock 上传 API：依次返回 3 个固定 URL
+    // Mock 上传 API：依次返回 3 个 OSS CDN URL
     let counter = 0;
     await page.route("/api/upload-product-image", async (route) => {
       counter++;
@@ -1408,7 +1408,7 @@ test.describe("阶段4: 产品文档（PDF / MD）", () => {
         contentType: "application/json",
         body: JSON.stringify({
           success: true,
-          url: `/uploads/product-images/honor/p-multi/mock-${counter}.png`,
+          url: `https://videomixer-files.tezign.com/alphato/product-images/honor/p-multi/mock-${counter}.png`,
         }),
       });
     });
@@ -1443,14 +1443,14 @@ test.describe("阶段4: 产品文档（PDF / MD）", () => {
     const after = await page.evaluate(() => JSON.parse(localStorage.getItem("alphato_data")!));
     const paths = after.accounts[0].products[0].imagePaths;
     expect(paths.length).toBe(3);
-    // localStorage 里存的是 URL，不是 base64
+    // localStorage 里存的是 OSS CDN URL，不是 base64 也不是本地路径
     for (const p of paths) {
-      expect(p.startsWith("/uploads/product-images/")).toBe(true);
+      expect(p.startsWith("https://videomixer-files.tezign.com/")).toBe(true);
       expect(p.startsWith("data:")).toBe(false);
     }
   });
 
-  test("删除自家上传的图片：调 /api/delete-upload 清盘上文件", async ({ page }) => {
+  test("删除自家上传的图片：OSS URL 和老的 /uploads/ 都会调 delete-upload，外链不调", async ({ page }) => {
     await page.goto("/");
     await page.evaluate(() => {
       localStorage.setItem(
@@ -1471,7 +1471,8 @@ test.describe("阶段4: 产品文档（PDF / MD）", () => {
                   description: "",
                   sellingPoints: [],
                   imagePaths: [
-                    "/uploads/product-images/honor/p-x/local-img.png",
+                    "https://videomixer-files.tezign.com/alphato/product-images/honor/p-x/oss-img.png",
+                    "/uploads/product-images/honor/p-x/legacy-img.png",
                     "https://example.com/external-img.png",
                   ],
                   links: [],
@@ -1489,38 +1490,38 @@ test.describe("阶段4: 产品文档（PDF / MD）", () => {
       );
     });
 
-    let deletedUrl = "";
-    let deleteCalled = false;
+    const deletedUrls: string[] = [];
     await page.route("/api/delete-upload", async (route) => {
       const body = await route.request().postDataJSON();
-      deletedUrl = body.fileUrl;
-      deleteCalled = true;
+      deletedUrls.push(body.fileUrl);
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) });
     });
 
     await page.goto("/settings");
     await page.getByRole("tab", { name: "产品库" }).click();
 
-    // 删第一张图（自家上传）—— hover 才显示 ×，用 force 直接点
     const thumbs = page.locator('img[alt^="Magic"]');
-    await expect(thumbs).toHaveCount(2);
+    await expect(thumbs).toHaveCount(3);
+
+    // 删第一张：OSS CDN URL → 应调 delete-upload
     await thumbs.first().hover();
     await thumbs.first().locator("..").locator("button").click();
+    await expect.poll(() => deletedUrls.length).toBe(1);
+    expect(deletedUrls[0]).toBe("https://videomixer-files.tezign.com/alphato/product-images/honor/p-x/oss-img.png");
 
-    // 调了 delete-upload
-    await expect.poll(() => deleteCalled).toBe(true);
-    expect(deletedUrl).toBe("/uploads/product-images/honor/p-x/local-img.png");
+    // 删第二张：老的 /uploads/ → 应调 delete-upload（兼容路径）
+    const t2 = page.locator('img[alt^="Magic"]').first();
+    await t2.hover();
+    await t2.locator("..").locator("button").click();
+    await expect.poll(() => deletedUrls.length).toBe(2);
+    expect(deletedUrls[1]).toBe("/uploads/product-images/honor/p-x/legacy-img.png");
 
-    // 删第二张（外链）—— 不应调 delete-upload
-    deleteCalled = false;
-    const remaining = page.locator('img[alt^="Magic"]');
-    await expect(remaining).toHaveCount(1);
-    await remaining.first().hover();
-    await remaining.first().locator("..").locator("button").click();
-    await expect(remaining).toHaveCount(0);
-    // 给一点时间确认 delete 没被调
+    // 删第三张：外链 → 不应调 delete-upload
+    const t3 = page.locator('img[alt^="Magic"]').first();
+    await t3.hover();
+    await t3.locator("..").locator("button").click();
     await page.waitForTimeout(200);
-    expect(deleteCalled).toBe(false);
+    expect(deletedUrls.length).toBe(2);
   });
 
   test("非允许的文件类型被前端 input.accept 限制", async ({ page }) => {

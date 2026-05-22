@@ -7,15 +7,12 @@ export const maxDuration = 60;
 const MAX_REFERENCE_IMAGES = 9;
 
 /**
- * 把入参里的相对 /uploads/ 路径拼成 Seedance 能访问的绝对 URL。
- * Seedance 是公网服务，需要 http(s):// 开头且可达。本地 dev 跑 localhost
- * 时拼出来的 URL Seedance 访问不到——这是部署期才能根治的事，先尽力。
+ * 只接受公网可达的 http(s):// URL。本地 /uploads/ 路径（旧数据）和 data:
+ * URI 一律拒收——新数据应该都是 OSS / CDN 域名。
  */
-function normalizeRefUrl(raw: string, origin: string): string | null {
+function normalizeRefUrl(raw: string): string | null {
   if (!raw) return null;
   if (/^https?:\/\//i.test(raw)) return raw;
-  if (raw.startsWith("/uploads/") && origin) return `${origin}${raw}`;
-  // data: 等 Seedance 不接受
   return null;
 }
 
@@ -49,8 +46,7 @@ export async function POST(req: NextRequest) {
       productName,
     });
 
-    // 合并新旧两个字段，去重 + 取前 9 张 + 拼绝对 URL
-    const origin = req.nextUrl.origin;
+    // 合并新旧两个字段，去重 + 取前 9 张
     const raw = [
       ...(referenceImages || []),
       ...(productImage ? [productImage] : []),
@@ -58,7 +54,7 @@ export async function POST(req: NextRequest) {
     const normalized: string[] = [];
     const seen = new Set<string>();
     for (const r of raw) {
-      const url = normalizeRefUrl(r, origin);
+      const url = normalizeRefUrl(r);
       if (!url || seen.has(url)) continue;
       seen.add(url);
       normalized.push(url);

@@ -654,8 +654,12 @@ export default function SetupPage() {
                             />
                             <button
                               onClick={async () => {
-                                // 自家上传的图片（/uploads/...）顺便清盘上文件；外链图（AI 搜索得到）只从 state 移除
-                                if (img.startsWith("/uploads/")) {
+                                // 自家上传的图（OSS CDN URL 或老的 /uploads/）顺手清后端；
+                                // 外链图（如 AI 搜索得到的）只从 state 移除
+                                const isOurs = img.startsWith("/uploads/")
+                                  || img.startsWith("https://videomixer-files.tezign.com/")
+                                  || img.startsWith("https://tezign-videomixer.oss-cn-beijing.aliyuncs.com/");
+                                if (isOurs) {
                                   try {
                                     await fetch("/api/delete-upload", {
                                       method: "POST",
