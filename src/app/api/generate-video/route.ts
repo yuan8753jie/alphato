@@ -40,26 +40,44 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No scenes provided" }, { status: 400 });
     }
 
-    const { prompt, totalDuration } = buildSeedancePrompt({
-      scenes: scenes as import("@/lib/seedance").SeedanceScene[],
-      isVoiceover,
-      productName,
-    });
-
-    // 合并新旧两个字段，去重 + 取前 9 张
+    // 合并新旧两个字段，去重 + 取前 9 张（先做这一步，prompt 构建要知道实际有几张图）
     const raw = [
       ...(referenceImages || []),
       ...(productImage ? [productImage] : []),
     ];
     const normalized: string[] = [];
     const seen = new Set<string>();
+    const rejectedNonHttp: string[] = [];
     for (const r of raw) {
       const url = normalizeRefUrl(r);
-      if (!url || seen.has(url)) continue;
+      if (!url) {
+        rejectedNonHttp.push(r);
+        continue;
+      }
+      if (seen.has(url)) continue;
       seen.add(url);
       normalized.push(url);
       if (normalized.length >= MAX_REFERENCE_IMAGES) break;
     }
+
+    const { prompt, totalDuration } = buildSeedancePrompt({
+      scenes: scenes as import("@/lib/seedance").SeedanceScene[],
+      isVoiceover,
+      productName,
+      referenceImageCount: normalized.length,
+    });
+
+    // Debug：发给 Seedance 之前打印请求摘要
+    console.log("[generate-video] sending to Seedance:", JSON.stringify({
+      productName,
+      refCount: normalized.length,
+      refRejected: rejectedNonHttp.length,
+      refUrls: normalized,
+      duration: totalDuration,
+      ratio: aspectRatio || "9:16",
+      generateAudio: isVoiceover,
+      promptHead: prompt.slice(0, 300),
+    }, null, 2));
 
     const task = await createSeedanceVideo({
       prompt,
@@ -70,7 +88,12 @@ export async function POST(req: NextRequest) {
       generateAudio: isVoiceover,
     });
 
-    return NextResponse.json({ success: true, task, referenceImagesUsed: normalized.length });
+    return NextResponse.json({
+      success: true,
+      task,
+      referenceImagesUsed: normalized.length,
+      referenceImagesRejected: rejectedNonHttp.length,
+    });
   } catch (err) {
     console.error("generate-video error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });

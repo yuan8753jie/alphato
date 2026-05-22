@@ -76,6 +76,7 @@ export function buildSeedancePrompt(params: {
   scenes: SeedanceScene[];
   isVoiceover: boolean;
   productName?: string;
+  referenceImageCount?: number;
   resolution?: string;
   ratio?: string;
 }): { prompt: string; totalDuration: number } {
@@ -97,8 +98,16 @@ export function buildSeedancePrompt(params: {
   });
 
   let body = segments.join("。");
+
+  // 关键：附了参考图时，强调按参考图呈现产品外观/配色。否则 Seedance 会按文字
+  // prompt 自由发挥（如把金色机身渲染成科技蓝/黑色）。
+  const refCount = params.referenceImageCount || 0;
   if (params.productName) {
-    body = `主体${params.productName}，全程保持外观与配色一致。${body}`;
+    if (refCount > 0) {
+      body = `主体${params.productName}（已附 ${refCount} 张该产品真实参考图）。请严格按照参考图呈现产品的机身颜色、相机模组、品牌 Logo 位置和外观细节；视频全程产品外观与配色不可改变，即使场景光影变化也要保持产品本色。${body}`;
+    } else {
+      body = `主体${params.productName}，全程保持外观与配色一致。${body}`;
+    }
   }
   body += "。整体电影感、柔光自然、镜头平稳、画面稳定。";
 
