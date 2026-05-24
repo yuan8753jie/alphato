@@ -928,7 +928,7 @@ test.describe("阶段11: prompt 用 @图片N 显式引用参考图", () => {
 
   test("buildSeedancePrompt 单测：refCount=5 → @图片1..@图片5 + 产品名 + 不出现 @图片6", () => {
     const { prompt } = buildSeedancePrompt({
-      scenes: [{ sceneNumber: 1, visual: "镜头", audio: "音乐", text: "看", duration: "3" }],
+      scenes: [{ visual: "镜头", text: "看", duration: "3" }],
       isVoiceover: true,
       productName: "Magic 8 Pro",
       referenceImageCount: 5,
@@ -943,9 +943,60 @@ test.describe("阶段11: prompt 用 @图片N 显式引用参考图", () => {
     expect(prompt).toContain("严格按照这些参考图");
   });
 
+  test("UI 预览随勾选实时变：默认无 @图片，勾 3 张 → 出现 @图片1..@图片3", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "h", name: "荣耀", platform: "douyin", accountUrl: "",
+              brand: { name: "荣耀", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [{
+                id: "p", name: "Magic 8 Pro", description: "", sellingPoints: [],
+                imagePaths: [
+                  "https://example.com/a.png",
+                  "https://example.com/b.png",
+                  "https://example.com/c.png",
+                ],
+                links: [], documents: [],
+              }],
+              personas: [], benchmarkAccounts: [],
+              topics: [{ id: "t", title: "T", angle: "", description: "", type: "conversion", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: ["p"], createdAt: "2026-05-24" }],
+              scripts: [{ id: "s", topicId: "t", productId: "p", variant: "free-voiceover", scenes: [{ sceneNumber: 1, visual: "v", audio: "a", text: "t", duration: "3" }], fullText: "x", createdAt: "2026-05-24" }],
+              trends: [], trendsDate: null, reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "h",
+        })
+      );
+    });
+
+    await page.goto("/topics/t");
+    await page.getByText(/查看发送给 Seedance/).click();
+    const preview = page.getByTestId("prompt-preview");
+
+    // 默认不勾，预览不含 @图片
+    await expect(preview).toBeVisible();
+    await expect(preview).not.toContainText("@图片");
+
+    // 勾上 toggle + 选 3 张
+    await page.getByTestId("ref-images-toggle").check();
+    await page.getByTestId("ref-image-0").click();
+    await page.getByTestId("ref-image-1").click();
+    await page.getByTestId("ref-image-2").click();
+
+    await expect(preview).toContainText("@图片1");
+    await expect(preview).toContainText("@图片2");
+    await expect(preview).toContainText("@图片3");
+    await expect(preview).not.toContainText("@图片4");
+  });
+
   test("buildSeedancePrompt 单测：refCount=0 → 不出现 @图片，老 fallback 文案", () => {
     const { prompt } = buildSeedancePrompt({
-      scenes: [{ sceneNumber: 1, visual: "镜头", audio: "音乐", text: "看", duration: "3" }],
+      scenes: [{ visual: "镜头", text: "看", duration: "3" }],
       isVoiceover: true,
       productName: "Magic 8 Pro",
       referenceImageCount: 0,

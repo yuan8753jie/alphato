@@ -44,3 +44,7 @@ next-env.d.ts
 
 # user uploads (product docs, etc.)
 /public/uploads/
+
+# playwright run artifacts
+/test-results/
+/playwright-report/

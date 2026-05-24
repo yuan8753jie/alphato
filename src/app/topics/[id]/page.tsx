@@ -611,20 +611,32 @@ export default function TopicDetailPage() {
 
                   <details>
                     <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
-                      查看发送给 Seedance 2.0 的实际提示词
+                      查看发送给 Seedance 2.0 的实际提示词（随产品/参考图选择实时变化）
                     </summary>
                     <div className="mt-2 rounded-lg bg-slate-950 text-slate-200 p-4 space-y-3">
                       {(() => {
+                        // 跟点"生成视频"时走的参数一致：focusProduct + 实际勾选的参考图数
+                        const previewFocusProduct = scriptProductId
+                          ? account?.products.find((p) => p.id === scriptProductId)
+                          : undefined;
+                        const previewProductName = previewFocusProduct?.name
+                          || account?.products?.[0]?.name;
+                        const previewRefCount = useRefImages ? refImageUrls.length : 0;
                         const { prompt, totalDuration } = buildSeedancePrompt({
                           // eslint-disable-next-line @typescript-eslint/no-explicit-any
                           scenes: (activeScript.scenes || []) as any,
                           isVoiceover,
-                          productName: account?.products?.[0]?.name,
+                          productName: previewProductName,
+                          referenceImageCount: previewRefCount,
                         });
                         return (
                           <>
-                            <p className="text-[10px] text-slate-400">单 prompt 串联多镜头 · 总时长 {totalDuration}s · {isVoiceover ? "原生口播 lip-sync" : "无口播"}</p>
-                            <p className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">{prompt}</p>
+                            <p className="text-[10px] text-slate-400">
+                              单 prompt 串联多镜头 · 总时长 {totalDuration}s · {isVoiceover ? "原生口播 lip-sync" : "无口播"}
+                              {previewProductName && <> · 主体「{previewProductName}」</>}
+                              {previewRefCount > 0 && <> · 引用 {previewRefCount} 张参考图</>}
+                            </p>
+                            <p className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap" data-testid="prompt-preview">{prompt}</p>
                           </>
                         );
                       })()}
