@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { buildSeedancePrompt } from "../src/lib/seedance";
 
 test.describe("多品牌数据层", () => {
   test("阶段1: 旧数据自动迁移到新结构", async ({ page }) => {
@@ -862,6 +863,137 @@ test.describe("阶段5: 视频引用产品图（Seedance 智能参考）", () =>
     await page.getByRole("button", { name: /生成视频/ }).click();
     await expect.poll(() => captured.body !== null).toBe(true);
     expect(captured.body?.referenceImages).toEqual([]);
+  });
+});
+
+test.describe("阶段11: prompt 用 @图片N 显式引用参考图", () => {
+  test("3 张参考图 → prompt 含 @图片1 @图片2 @图片3 + 产品名", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "h",
+              name: "荣耀",
+              platform: "douyin",
+              accountUrl: "",
+              brand: { name: "荣耀", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [{
+                id: "p",
+                name: "Magic 8 Pro",
+                description: "",
+                sellingPoints: [],
+                imagePaths: [
+                  "https://videomixer-files.tezign.com/alphato/product-images/h/p/a.png",
+                  "https://videomixer-files.tezign.com/alphato/product-images/h/p/b.png",
+                  "https://videomixer-files.tezign.com/alphato/product-images/h/p/c.png",
+                ],
+                links: [],
+                documents: [],
+              }],
+              personas: [], benchmarkAccounts: [],
+              topics: [{ id: "t", title: "测试", angle: "", description: "", type: "conversion", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: ["p"], createdAt: "2026-05-24" }],
+              scripts: [{ id: "s", topicId: "t", productId: "p", variant: "free-voiceover", scenes: [{ sceneNumber: 1, visual: "镜头", audio: "a", text: "t", duration: "3" }], fullText: "test", createdAt: "2026-05-24" }],
+              trends: [], trendsDate: null, reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "h",
+        })
+      );
+    });
+
+    let captured: { prompt?: string; referenceImages?: string[] } | null = null;
+    await page.route("/api/generate-video", async (route) => {
+      // 把真实的 prompt 构建逻辑走一遍 —— passthrough 而不是 mock
+      const body = await route.request().postDataJSON();
+      captured = body;
+      await route.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify({ success: true, task: { taskId: "x" }, prompt: "", referenceImages: [] }),
+      });
+    });
+
+    await page.goto("/topics/t");
+    await page.getByTestId("ref-images-toggle").check();
+    await page.getByTestId("ref-image-0").click();
+    await page.getByTestId("ref-image-1").click();
+    await page.getByTestId("ref-image-2").click();
+    await page.getByRole("button", { name: /生成视频/ }).click();
+
+    await expect.poll(() => captured?.referenceImages?.length).toBe(3);
+  });
+
+  test("buildSeedancePrompt 单测：refCount=5 → @图片1..@图片5 + 产品名 + 不出现 @图片6", () => {
+    const { prompt } = buildSeedancePrompt({
+      scenes: [{ sceneNumber: 1, visual: "镜头", audio: "音乐", text: "看", duration: "3" }],
+      isVoiceover: true,
+      productName: "Magic 8 Pro",
+      referenceImageCount: 5,
+    });
+    expect(prompt).toContain("@图片1");
+    expect(prompt).toContain("@图片2");
+    expect(prompt).toContain("@图片3");
+    expect(prompt).toContain("@图片4");
+    expect(prompt).toContain("@图片5");
+    expect(prompt).not.toContain("@图片6");
+    expect(prompt).toContain("Magic 8 Pro");
+    expect(prompt).toContain("严格按照这些参考图");
+  });
+
+  test("buildSeedancePrompt 单测：refCount=0 → 不出现 @图片，老 fallback 文案", () => {
+    const { prompt } = buildSeedancePrompt({
+      scenes: [{ sceneNumber: 1, visual: "镜头", audio: "音乐", text: "看", duration: "3" }],
+      isVoiceover: true,
+      productName: "Magic 8 Pro",
+      referenceImageCount: 0,
+    });
+    expect(prompt).not.toContain("@图片");
+    expect(prompt).toContain("Magic 8 Pro");
+    expect(prompt).toContain("全程保持外观与配色一致");
+  });
+
+  test("intercept: 实际发到 server 的请求体 referenceImages 长度对，UI 选了 5 张", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate(() => {
+      localStorage.setItem(
+        "alphato_data",
+        JSON.stringify({
+          accounts: [
+            {
+              id: "h", name: "荣耀", platform: "douyin", accountUrl: "",
+              brand: { name: "荣耀", tone: "", rules: [], industry: "3C" },
+              brandMaterials: [],
+              products: [{
+                id: "p", name: "Magic 8 Pro", description: "", sellingPoints: [],
+                imagePaths: Array.from({ length: 5 }, (_, i) => `https://example.com/img${i}.png`),
+                links: [], documents: [],
+              }],
+              personas: [], benchmarkAccounts: [],
+              topics: [{ id: "t", title: "T", angle: "", description: "", type: "conversion", relatedTrendIds: [], estimatedAppeal: "", status: "pending", productIds: ["p"], createdAt: "2026-05-24" }],
+              scripts: [{ id: "s", topicId: "t", productId: "p", variant: "free-voiceover", scenes: [{ sceneNumber: 1, visual: "v", audio: "a", text: "t", duration: "3" }], fullText: "x", createdAt: "2026-05-24" }],
+              trends: [], trendsDate: null, reviewPersonas: null, reviewResults: null,
+            },
+          ],
+          activeAccountId: "h",
+        })
+      );
+    });
+
+    const captured: { body: { referenceImages?: string[] } | null } = { body: null };
+    await page.route("/api/generate-video", async (route) => {
+      captured.body = await route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, task: { taskId: "x" }, prompt: "p", referenceImages: [] }) });
+    });
+
+    await page.goto("/topics/t");
+    await page.getByTestId("ref-images-toggle").check();
+    for (let i = 0; i < 5; i++) await page.getByTestId(`ref-image-${i}`).click();
+    await page.getByRole("button", { name: /生成视频/ }).click();
+
+    await expect.poll(() => captured.body?.referenceImages?.length).toBe(5);
   });
 });
 

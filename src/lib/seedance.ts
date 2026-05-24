@@ -100,12 +100,15 @@ export function buildSeedancePrompt(params: {
 
   let body = segments.join("。");
 
-  // 关键：附了参考图时，强调按参考图呈现产品外观/配色。否则 Seedance 会按文字
-  // prompt 自由发挥（如把金色机身渲染成科技蓝/黑色）。
+  // 关键：附了参考图时用 @图片N 显式引用素材（Seedance 官方推荐写法）。
+  // 仅在 content 数组里塞图不够 —— 模型不会自己悟每张图的用途，会把 prompt 当文生视频用，
+  // 参考图退化成弱"参考"而非强"约束"，产物颜色/外观会偏离（金机身渲染成蓝/黑就栽过这个）。
   const refCount = params.referenceImageCount || 0;
   if (params.productName) {
     if (refCount > 0) {
-      body = `主体${params.productName}（已附 ${refCount} 张该产品真实参考图）。请严格按照参考图呈现产品的机身颜色、相机模组、品牌 Logo 位置和外观细节；视频全程产品外观与配色不可改变，即使场景光影变化也要保持产品本色。${body}`;
+      // @图片1 @图片2 ... @图片N 列出
+      const refTags = Array.from({ length: refCount }, (_, i) => `@图片${i + 1}`).join(" ");
+      body = `${refTags} 均为本视频主体「${params.productName}」的真实多角度参考图。请严格按照这些参考图呈现产品的机身颜色、相机模组、品牌 Logo 位置和外观细节，视频全程产品外观与配色不可改变（即使场景光影变化也要保持产品本色）。${body}`;
     } else {
       body = `主体${params.productName}，全程保持外观与配色一致。${body}`;
     }
