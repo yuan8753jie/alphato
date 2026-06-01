@@ -7,6 +7,7 @@ import {
 } from "@/lib/store";
 import type { Topic, Script } from "@/lib/types";
 import { TOPIC_TYPE_LABELS } from "@/lib/types";
+import { useLang } from "@/lib/i18n";
 
 const TYPE_COLORS: Record<string, string> = {
   traffic: "bg-red-100 text-red-800",
@@ -15,7 +16,15 @@ const TYPE_COLORS: Record<string, string> = {
   persona: "bg-purple-100 text-purple-800",
 };
 
-const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
+const TOPIC_TYPE_LABELS_EN: Record<string, string> = {
+  traffic: "Traffic",
+  trust: "Trust",
+  conversion: "Conversion",
+  persona: "Persona",
+};
+
+const WEEKDAYS_ZH = ["一", "二", "三", "四", "五", "六", "日"];
+const WEEKDAYS_EN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 type ViewMode = "week" | "month";
 
@@ -99,12 +108,16 @@ function getTopicIcon(topic: Topic, scripts: Script[]): string {
 }
 
 export default function CalendarPage() {
+  const { t, lang } = useLang();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [scripts, setScripts] = useState<Script[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [viewDate, setViewDate] = useState(new Date());
   const [dragTopicId, setDragTopicId] = useState<string | null>(null);
   const [autoScheduling, setAutoScheduling] = useState(false);
+  const typeLabel = (type: string) =>
+    lang === "en" ? (TOPIC_TYPE_LABELS_EN[type] || type) : (TOPIC_TYPE_LABELS[type as keyof typeof TOPIC_TYPE_LABELS] || type);
+  const WEEKDAYS = lang === "en" ? WEEKDAYS_EN : WEEKDAYS_ZH;
 
   useEffect(() => {
     setTopics(getTopics());
@@ -174,7 +187,7 @@ export default function CalendarPage() {
 
   // Label
   const headerLabel = viewMode === "month"
-    ? viewDate.toLocaleDateString("zh-CN", { year: "numeric", month: "long" })
+    ? viewDate.toLocaleDateString(lang === "en" ? "en-US" : "zh-CN", { year: "numeric", month: "long" })
     : (() => {
         const week = getWeekDates(viewDate);
         return `${week[0].getMonth() + 1}/${week[0].getDate()} - ${week[6].getMonth() + 1}/${week[6].getDate()}`;
@@ -217,13 +230,13 @@ export default function CalendarPage() {
                 <div className="flex items-center justify-between mt-0.5">
                   <div className="flex items-center gap-1">
                     <span className={`text-[8px] px-1 rounded ${TYPE_COLORS[topic.type] || "bg-muted"}`}>
-                      {TOPIC_TYPE_LABELS[topic.type] || topic.type}
+                      {typeLabel(topic.type)}
                     </span>
                     {st.scoreBadge && (
                       <span className="text-[8px]">{st.scoreBadge}</span>
                     )}
                     {topic.reviewScore == null && (
-                      <span className="text-[8px] text-amber-600">未评审</span>
+                      <span className="text-[8px] text-amber-600">{t("未评审", "Not reviewed")}</span>
                     )}
                   </div>
                   <button
@@ -245,12 +258,12 @@ export default function CalendarPage() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-xl font-bold">营销日历</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">拖拽选题到日历排期，或让 AI 自动排</p>
+          <h1 className="text-xl font-bold">{t("营销日历", "Marketing Calendar")}</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{t("拖拽选题到日历排期，或让 AI 自动排", "Drag topics onto the calendar to schedule, or let AI auto-schedule them")}</p>
         </div>
         {unscheduled.length > 0 && (
           <Button onClick={autoSchedule} disabled={autoScheduling} variant="outline" size="sm">
-            {autoScheduling ? "排期中..." : `AI 自动排期（${unscheduled.length} 条）`}
+            {autoScheduling ? t("排期中...", "Scheduling...") : t(`AI 自动排期（${unscheduled.length} 条）`, `AI auto-schedule (${unscheduled.length})`)}
           </Button>
         )}
       </div>
@@ -262,7 +275,7 @@ export default function CalendarPage() {
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <button onClick={() => navigate(-1)} className="text-xs px-2 py-1 rounded bg-muted hover:bg-muted/80">◀</button>
-              <button onClick={goToday} className="text-xs px-2 py-1 rounded bg-muted hover:bg-muted/80">今天</button>
+              <button onClick={goToday} className="text-xs px-2 py-1 rounded bg-muted hover:bg-muted/80">{t("今天", "Today")}</button>
               <button onClick={() => navigate(1)} className="text-xs px-2 py-1 rounded bg-muted hover:bg-muted/80">▶</button>
               <span className="text-sm font-semibold ml-2">{headerLabel}</span>
             </div>
@@ -271,13 +284,13 @@ export default function CalendarPage() {
                 onClick={() => setViewMode("week")}
                 className={`text-xs px-3 py-1.5 transition-colors ${viewMode === "week" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
               >
-                周
+                {t("周", "Week")}
               </button>
               <button
                 onClick={() => setViewMode("month")}
                 className={`text-xs px-3 py-1.5 transition-colors ${viewMode === "month" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
               >
-                月
+                {t("月", "Month")}
               </button>
             </div>
           </div>
@@ -309,7 +322,7 @@ export default function CalendarPage() {
         <div className="w-56 shrink-0">
           <div className="sticky top-6">
             <h3 className="text-sm font-semibold mb-2">
-              待排期
+              {t("待排期", "To schedule")}
               {unscheduled.length > 0 && (
                 <span className="text-muted-foreground font-normal ml-1">({unscheduled.length})</span>
               )}
@@ -329,14 +342,14 @@ export default function CalendarPage() {
                       <p className="font-medium line-clamp-2">{topic.title}</p>
                     </div>
                     <span className={`text-[9px] px-1 py-px rounded mt-1 inline-block ${TYPE_COLORS[topic.type] || "bg-muted"}`}>
-                      {TOPIC_TYPE_LABELS[topic.type] || topic.type}
+                      {typeLabel(topic.type)}
                     </span>
                   </div>
                 ))}
               </div>
             ) : (
               <p className="text-xs text-muted-foreground py-6 text-center">
-                没有待排期选题。<br/>去「选题」页面采用后出现在这里。
+                {t("没有待排期选题。", "No topics to schedule.")}<br/>{t("去「选题」页面采用后出现在这里。", "Approved topics from the Topics page will appear here.")}
               </p>
             )}
           </div>

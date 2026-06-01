@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { UploadCloud, X, Image as ImageIcon, Video as VideoIcon } from "lucide-react";
 import type { SeedanceVariant } from "@/lib/seedance";
+import { useLang } from "@/lib/i18n";
 
 interface RefAsset {
   dataUrl: string;
@@ -70,6 +71,7 @@ function DropZone({
   maxSizeMb: number;
   disabled?: boolean;
 }) {
+  const { t } = useLang();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
 
@@ -82,12 +84,12 @@ function DropZone({
 
   const slotLeft = maxCount - assets.length;
   const Icon = kind === "image" ? ImageIcon : VideoIcon;
-  const label = kind === "image" ? "参考图" : "参考视频";
+  const label = kind === "image" ? t("参考图", "Reference image") : t("参考视频", "Reference video");
   const accept = kind === "image" ? "image/*" : "video/*";
   const hint =
     kind === "image"
-      ? `支持 jpg/png/webp · 最多 ${maxCount} 张 · 单张 ≤ ${maxSizeMb}MB`
-      : `支持 mp4 · 最多 ${maxCount} 个 · 2-15秒 · 单个 ≤ ${maxSizeMb}MB`;
+      ? t(`支持 jpg/png/webp · 最多 ${maxCount} 张 · 单张 ≤ ${maxSizeMb}MB`, `jpg/png/webp · up to ${maxCount} images · ≤ ${maxSizeMb}MB each`)
+      : t(`支持 mp4 · 最多 ${maxCount} 个 · 2-15秒 · 单个 ≤ ${maxSizeMb}MB`, `mp4 · up to ${maxCount} videos · 2-15s · ≤ ${maxSizeMb}MB each`);
 
   return (
     <div className="space-y-2">
@@ -112,7 +114,9 @@ function DropZone({
         >
           <UploadCloud size={22} className="mx-auto mb-1.5 text-muted-foreground" />
           <p className="text-xs text-muted-foreground">
-            拖拽{kind === "image" ? "图片" : "视频"}到此处，或点击选择
+            {kind === "image"
+              ? t("拖拽图片到此处，或点击选择", "Drag images here, or click to choose")
+              : t("拖拽视频到此处，或点击选择", "Drag videos here, or click to choose")}
           </p>
           <p className="text-[10px] text-muted-foreground mt-0.5">{hint}</p>
           <input
@@ -145,7 +149,7 @@ function DropZone({
                 onClick={(e) => { e.stopPropagation(); onRemove(i); }}
                 disabled={disabled}
                 className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer disabled:cursor-not-allowed"
-                title="移除"
+                title={t("移除", "Remove")}
               >
                 <X size={12} />
               </button>
@@ -161,6 +165,7 @@ function DropZone({
 }
 
 export default function SeedancePlaygroundPage() {
+  const { t } = useLang();
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [resolution, setResolution] = useState("720p");
   const [ratio, setRatio] = useState("9:16");
@@ -183,7 +188,8 @@ export default function SeedancePlaygroundPage() {
 
     const slotLeft = maxCount - existing.length;
     if (slotLeft <= 0) {
-      setUploadError(`${kind === "image" ? "参考图" : "参考视频"}数量已达上限（${maxCount}）`);
+      const kindLabel = kind === "image" ? t("参考图", "Reference image") : t("参考视频", "Reference video");
+      setUploadError(t(`${kindLabel}数量已达上限（${maxCount}）`, `${kindLabel} limit reached (${maxCount})`));
       return;
     }
 
@@ -191,18 +197,18 @@ export default function SeedancePlaygroundPage() {
     const newAssets: RefAsset[] = [];
     for (const f of fileArr) {
       if (!f.type.startsWith(expectedPrefix)) {
-        setUploadError(`${f.name} 不是${kind === "image" ? "图片" : "视频"}类型`);
+        setUploadError(t(`${f.name} 不是${kind === "image" ? "图片" : "视频"}类型`, `${f.name} is not a${kind === "image" ? "n image" : " video"} file`));
         continue;
       }
       if (f.size > maxSizeMb * 1024 * 1024) {
-        setUploadError(`${f.name} 超过 ${maxSizeMb}MB 上限`);
+        setUploadError(t(`${f.name} 超过 ${maxSizeMb}MB 上限`, `${f.name} exceeds the ${maxSizeMb}MB limit`));
         continue;
       }
       try {
         const dataUrl = await fileToDataUrl(f);
         newAssets.push({ dataUrl, name: f.name, size: f.size, type: f.type });
       } catch {
-        setUploadError(`读取 ${f.name} 失败`);
+        setUploadError(t(`读取 ${f.name} 失败`, `Failed to read ${f.name}`));
       }
     }
     if (newAssets.length > 0) {
@@ -238,42 +244,42 @@ export default function SeedancePlaygroundPage() {
           }));
           return;
         }
-        const t = data.task;
+        const task = data.task;
         const elapsed = Date.now() - startedAt;
-        if (t.status === "succeeded" && t.videoUrl) {
+        if (task.status === "succeeded" && task.videoUrl) {
           setResults((prev) => ({
             ...prev,
             [def.variant]: {
               ...prev[def.variant],
               status: "done",
-              videoUrl: t.videoUrl,
-              progressMsg: "完成",
+              videoUrl: task.videoUrl,
+              progressMsg: t("完成", "Done"),
               elapsedMs: elapsed,
             },
           }));
           return;
         }
-        if (t.status === "failed" || t.status === "expired" || t.status === "cancelled") {
+        if (task.status === "failed" || task.status === "expired" || task.status === "cancelled") {
           setResults((prev) => ({
             ...prev,
-            [def.variant]: { ...prev[def.variant], status: "failed", errorMsg: t.statusMsg || t.status, elapsedMs: elapsed },
+            [def.variant]: { ...prev[def.variant], status: "failed", errorMsg: task.statusMsg || task.status, elapsedMs: elapsed },
           }));
           return;
         }
         setResults((prev) => ({
           ...prev,
-          [def.variant]: { ...prev[def.variant], status: "polling", progressMsg: `${t.status} · ${Math.round(elapsed / 1000)}s`, elapsedMs: elapsed },
+          [def.variant]: { ...prev[def.variant], status: "polling", progressMsg: `${task.status} · ${Math.round(elapsed / 1000)}s`, elapsedMs: elapsed },
         }));
       } catch (e) {
         setResults((prev) => ({
           ...prev,
-          [def.variant]: { ...prev[def.variant], progressMsg: `轮询错误: ${String(e)}` },
+          [def.variant]: { ...prev[def.variant], progressMsg: t(`轮询错误: ${String(e)}`, `Polling error: ${String(e)}`) },
         }));
       }
     }
     setResults((prev) => ({
       ...prev,
-      [def.variant]: { ...prev[def.variant], status: "failed", errorMsg: "超时" },
+      [def.variant]: { ...prev[def.variant], status: "failed", errorMsg: t("超时", "Timed out") },
     }));
   }
 
@@ -285,7 +291,7 @@ export default function SeedancePlaygroundPage() {
         variant: def.variant,
         label: def.label,
         status: "submitting",
-        progressMsg: "提交中...",
+        progressMsg: t("提交中...", "Submitting..."),
         startedAt,
       },
     }));
@@ -309,13 +315,13 @@ export default function SeedancePlaygroundPage() {
       if (!data.success || !data.task?.taskId) {
         setResults((prev) => ({
           ...prev,
-          [def.variant]: { ...prev[def.variant], status: "failed", errorMsg: data.error || "提交失败" },
+          [def.variant]: { ...prev[def.variant], status: "failed", errorMsg: data.error || t("提交失败", "Submission failed") },
         }));
         return;
       }
       setResults((prev) => ({
         ...prev,
-        [def.variant]: { ...prev[def.variant], status: "polling", taskId: data.task.taskId, progressMsg: "排队中..." },
+        [def.variant]: { ...prev[def.variant], status: "polling", taskId: data.task.taskId, progressMsg: t("排队中...", "Queued...") },
       }));
       await pollUntilDone(def, data.task.taskId, startedAt);
     } catch (e) {
@@ -338,9 +344,9 @@ export default function SeedancePlaygroundPage() {
   return (
     <div className="max-w-6xl">
       <div className="mb-6">
-        <h1 className="text-xl font-bold">Seedance 对比测试</h1>
+        <h1 className="text-xl font-bold">{t("Seedance 对比测试", "Seedance Compare")}</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          同一 prompt 并发发给 Seedance 2.0 标准版 / Fast 版，对比效果 · 仅用于测试，不影响正式生产流
+          {t("同一 prompt 并发发给 Seedance 2.0 标准版 / Fast 版，对比效果 · 仅用于测试，不影响正式生产流", "Send the same prompt to Seedance 2.0 Standard / Fast in parallel to compare results · testing only, does not affect the production pipeline")}
         </p>
       </div>
 
@@ -350,24 +356,24 @@ export default function SeedancePlaygroundPage() {
         </CardHeader>
         <CardContent>
           <p className="text-xs text-muted-foreground mb-2">
-            不用在文本里写 --resolution/--ratio/--duration，下面下拉框就是唯一来源
+            {t("不用在文本里写 --resolution/--ratio/--duration，下面下拉框就是唯一来源", "No need to put --resolution/--ratio/--duration in the text — the dropdowns below are the single source of truth")}
           </p>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             className="w-full h-36 p-3 text-sm font-mono rounded border bg-background resize-y"
-            placeholder="写入你想测试的 prompt..."
+            placeholder={t("写入你想测试的 prompt...", "Write the prompt you want to test...")}
           />
-          <p className="text-[11px] text-muted-foreground mt-1">{prompt.length} 字符</p>
+          <p className="text-[11px] text-muted-foreground mt-1">{t(`${prompt.length} 字符`, `${prompt.length} chars`)}</p>
         </CardContent>
       </Card>
 
       <Card className="mb-4">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">
-            参考资源（可选）
+            {t("参考资源（可选）", "Reference Assets (optional)")}
             <span className="ml-2 text-xs text-muted-foreground font-normal">
-              Seedance 2.0 支持最多 {MAX_IMAGES} 图 + {MAX_VIDEOS} 视频做多模态参考
+              {t(`Seedance 2.0 支持最多 ${MAX_IMAGES} 图 + ${MAX_VIDEOS} 视频做多模态参考`, `Seedance 2.0 supports up to ${MAX_IMAGES} images + ${MAX_VIDEOS} videos as multi-modal references`)}
             </span>
           </CardTitle>
         </CardHeader>
@@ -402,7 +408,7 @@ export default function SeedancePlaygroundPage() {
         <CardContent className="py-4">
           <div className="flex items-center gap-6 flex-wrap">
             <label className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">分辨率</span>
+              <span className="text-muted-foreground">{t("分辨率", "Resolution")}</span>
               <select
                 value={resolution}
                 onChange={(e) => setResolution(e.target.value)}
@@ -413,17 +419,17 @@ export default function SeedancePlaygroundPage() {
                 <option value="1080p">1080p</option>
               </select>
               <span className="text-[11px] text-muted-foreground">
-                {resolution === "720p" && "推荐"}
-                {resolution === "480p" && "最省钱"}
+                {resolution === "720p" && t("推荐", "Recommended")}
+                {resolution === "480p" && t("最省钱", "Cheapest")}
                 {resolution === "1080p" && (
                   <span className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                    账户未开通，大概率 400 报错
+                    {t("账户未开通，大概率 400 报错", "Account not enabled — likely to return a 400 error")}
                   </span>
                 )}
               </span>
             </label>
             <label className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">宽高比</span>
+              <span className="text-muted-foreground">{t("宽高比", "Aspect Ratio")}</span>
               <select
                 value={ratio}
                 onChange={(e) => setRatio(e.target.value)}
@@ -437,7 +443,7 @@ export default function SeedancePlaygroundPage() {
               </select>
             </label>
             <label className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">时长</span>
+              <span className="text-muted-foreground">{t("时长", "Duration")}</span>
               <input
                 type="number"
                 min={4}
@@ -446,7 +452,7 @@ export default function SeedancePlaygroundPage() {
                 onChange={(e) => setDuration(Number(e.target.value) || 5)}
                 className="border rounded px-2 py-1 text-sm bg-background w-16"
               />
-              <span className="text-muted-foreground">秒</span>
+              <span className="text-muted-foreground">{t("秒", "sec")}</span>
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input
@@ -454,7 +460,7 @@ export default function SeedancePlaygroundPage() {
                 checked={generateAudio}
                 onChange={(e) => setGenerateAudio(e.target.checked)}
               />
-              <span>生成音频（lip-sync + 配乐）</span>
+              <span>{t("生成音频（lip-sync + 配乐）", "Generate audio (lip-sync + soundtrack)")}</span>
             </label>
             <label className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">Seed</span>
@@ -462,7 +468,7 @@ export default function SeedancePlaygroundPage() {
                 type="number"
                 value={seed}
                 onChange={(e) => setSeed(e.target.value)}
-                placeholder="留空=随机"
+                placeholder={t("留空=随机", "Empty = random")}
                 className="border rounded px-2 py-1 text-sm bg-background w-24"
               />
               <button
@@ -470,11 +476,11 @@ export default function SeedancePlaygroundPage() {
                 onClick={() => setSeed(String(Math.floor(Math.random() * 1000000)))}
                 className="text-[11px] text-primary hover:underline cursor-pointer"
               >
-                随机 seed
+                {t("随机 seed", "Random seed")}
               </button>
               {seed.trim() && (
                 <span className="text-[10px] text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">
-                  固定 seed · 可做对照实验
+                  {t("固定 seed · 可做对照实验", "Fixed seed · enables controlled comparisons")}
                 </span>
               )}
             </label>
@@ -484,7 +490,7 @@ export default function SeedancePlaygroundPage() {
 
       <Card className="mb-4">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">选择 Seedance 2.0 变体</CardTitle>
+          <CardTitle className="text-sm">{t("选择 Seedance 2.0 变体", "Choose Seedance 2.0 Variants")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-2">
@@ -510,11 +516,16 @@ export default function SeedancePlaygroundPage() {
 
       <div className="flex items-center gap-3 mb-6">
         <Button onClick={runAll} disabled={running || selected.size === 0} size="lg">
-          {running ? `生成中（${Object.values(results).filter((r) => r.status === "done").length}/${selected.size} 完成）...` : `并发生成（${selected.size} 个变体）`}
+          {running
+            ? t(
+                `生成中（${Object.values(results).filter((r) => r.status === "done").length}/${selected.size} 完成）...`,
+                `Generating (${Object.values(results).filter((r) => r.status === "done").length}/${selected.size} done)...`
+              )
+            : t(`并发生成（${selected.size} 个变体）`, `Generate in parallel (${selected.size} variants)`)}
         </Button>
         {Object.keys(results).length > 0 && !running && (
           <Button onClick={() => setResults({} as Record<SeedanceVariant, RunResult>)} variant="outline" size="sm">
-            清空结果
+            {t("清空结果", "Clear results")}
           </Button>
         )}
       </div>
@@ -543,10 +554,10 @@ export default function SeedancePlaygroundPage() {
                       <video src={r.videoUrl} controls className="w-full rounded bg-black" playsInline />
                       <div className="flex justify-between text-[11px]">
                         <a href={r.videoUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground underline">
-                          新窗口 ↗
+                          {t("新窗口 ↗", "New tab ↗")}
                         </a>
                         <a href={r.videoUrl} download className="text-muted-foreground hover:text-foreground underline">
-                          下载
+                          {t("下载", "Download")}
                         </a>
                       </div>
                     </div>

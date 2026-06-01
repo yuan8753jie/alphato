@@ -8,6 +8,7 @@ import { getAccount, getTopics, getScripts, saveScript } from "@/lib/store";
 import type { Account, Topic } from "@/lib/types";
 import { TOPIC_TYPE_LABELS } from "@/lib/types";
 import { buildSeedancePrompt } from "@/lib/seedance";
+import { useLang } from "@/lib/i18n";
 
 const TYPE_COLORS: Record<string, string> = {
   traffic: "bg-red-100 text-red-800",
@@ -17,10 +18,10 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 const VARIANTS = [
-  { key: "free-voiceover", label: "稳健版·口播", desc: "常规热门模式 + 有台词旁白" },
-  { key: "free-music", label: "稳健版·音乐", desc: "常规热门模式 + 纯音乐驱动" },
-  { key: "creative-voiceover", label: "创意版·口播", desc: "创造性思维方法论 + 有台词" },
-  { key: "creative-music", label: "创意版·音乐", desc: "创造性思维方法论 + 纯音乐" },
+  { key: "free-voiceover", labelZh: "稳健版·口播", labelEn: "Stable · Voiceover", descZh: "常规热门模式 + 有台词旁白", descEn: "Conventional trending pattern + scripted voiceover" },
+  { key: "free-music", labelZh: "稳健版·音乐", labelEn: "Stable · Music", descZh: "常规热门模式 + 纯音乐驱动", descEn: "Conventional trending pattern + music only" },
+  { key: "creative-voiceover", labelZh: "创意版·口播", labelEn: "Creative · Voiceover", descZh: "创造性思维方法论 + 有台词", descEn: "Creative thinking methodology + scripted lines" },
+  { key: "creative-music", labelZh: "创意版·音乐", labelEn: "Creative · Music", descZh: "创造性思维方法论 + 纯音乐", descEn: "Creative thinking methodology + music only" },
 ] as const;
 
 type VariantKey = typeof VARIANTS[number]["key"];
@@ -29,6 +30,7 @@ export default function TopicDetailPage() {
   const router = useRouter();
   const params = useParams();
   const topicId = params.id as string;
+  const { t } = useLang();
 
   const [account, setAccount] = useState<Account | null>(null);
   const [topic, setTopic] = useState<Topic | null>(null);
@@ -136,10 +138,10 @@ export default function TopicDetailPage() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setScripts(newScripts as any);
       } else {
-        setError(data.error || "脚本生成失败");
+        setError(data.error || t("脚本生成失败", "Script generation failed"));
       }
     } catch (err) {
-      setError("请求失败：" + String(err));
+      setError(t("请求失败：", "Request failed: ") + String(err));
     } finally {
       setLoadingVariants(new Set());
     }
@@ -175,7 +177,7 @@ export default function TopicDetailPage() {
     // 重试时清掉上一轮的错误
     setVideoStates((prev) => ({
       ...prev,
-      [tab]: { loading: true, status: "提交视频生成...", url: undefined, error: undefined, errorCode: undefined },
+      [tab]: { loading: true, status: t("提交视频生成...", "Submitting video generation..."), url: undefined, error: undefined, errorCode: undefined },
     }));
 
     try {
@@ -196,16 +198,16 @@ export default function TopicDetailPage() {
       });
       const data = await res.json();
       if (!data.success || !data.task?.taskId) {
-        setError(data.error || "提交失败");
+        setError(data.error || t("提交失败", "Submission failed"));
         updateVideoState(tab, { loading: false });
         return;
       }
 
-      updateVideoState(tab, { taskId: data.task.taskId, status: "视频生成中..." });
+      updateVideoState(tab, { taskId: data.task.taskId, status: t("视频生成中...", "Generating video...") });
       const videoUrl = await pollVideoUntilDone(tab, data.task.taskId);
       if (!videoUrl) return;
 
-      updateVideoState(tab, { url: videoUrl, status: "完成", loading: false });
+      updateVideoState(tab, { url: videoUrl, status: t("完成", "Done"), loading: false });
 
       // 持久化：把视频成片 + 当时的 prompt / 参考图 / 时间戳全部快照到 Script
       // —— 历史页直接从这些字段读
@@ -241,38 +243,44 @@ export default function TopicDetailPage() {
           const statusMsg: string | undefined = data.task?.statusMsg;
           const friendly = friendlyVideoError(errorCode, statusMsg);
           updateVideoState(tab, {
-            status: "视频生成失败",
+            status: t("视频生成失败", "Video generation failed"),
             loading: false,
             error: friendly,
             errorCode,
           });
           return null;
         }
-        updateVideoState(tab, { status: data.task?.status === "processing" ? "视频生成中..." : "排队中..." });
+        updateVideoState(tab, { status: data.task?.status === "processing" ? t("视频生成中...", "Generating video...") : t("排队中...", "Queued...") });
       } catch { /* retry */ }
     }
     updateVideoState(tab, {
-      status: "超时",
+      status: t("超时", "Timed out"),
       loading: false,
-      error: "视频生成超过 10 分钟，请重试或换用 less 张参考图。",
+      error: t("视频生成超过 10 分钟，请重试或换用 less 张参考图。", "Video generation exceeded 10 minutes. Please retry or use fewer reference images."),
     });
     return null;
   }
 
   // Seedance 错误码 → 用户友好描述
   function friendlyVideoError(code: string | undefined, msg: string | undefined): string {
-    if (!code && !msg) return "生成失败，请重试";
+    if (!code && !msg) return t("生成失败，请重试", "Generation failed, please retry");
     const c = code || "";
     if (c.includes("Sensitive") || c.includes("PolicyViolation") || c.includes("Copyright")) {
-      return "Seedance 风控判定输出可能涉及版权（多张高清品牌产品图易触发）。建议：少选几张参考图（试试 2-3 张），或换更抽象的角度（不要全是产品本体特写）。";
+      return t(
+        "Seedance 风控判定输出可能涉及版权（多张高清品牌产品图易触发）。建议：少选几张参考图（试试 2-3 张），或换更抽象的角度（不要全是产品本体特写）。",
+        "Seedance moderation flagged the output as a possible copyright concern (multiple high-res branded product images often trigger this). Tip: pick fewer reference images (try 2-3), or use more abstract angles (avoid only product close-ups)."
+      );
     }
     if (c.includes("Image") && (c.includes("Fetch") || c.includes("NotFound"))) {
-      return "Seedance 无法访问参考图。如果是本地上传的图，确认图床/OSS 公网可达。";
+      return t(
+        "Seedance 无法访问参考图。如果是本地上传的图，确认图床/OSS 公网可达。",
+        "Seedance cannot access the reference image. If it was locally uploaded, make sure the host/OSS is publicly reachable."
+      );
     }
     if (c.includes("InvalidParameter")) {
-      return `参数错误：${msg || c}`;
+      return t(`参数错误：${msg || c}`, `Invalid parameter: ${msg || c}`);
     }
-    return msg || `生成失败（${c || "未知"}）`;
+    return msg || t(`生成失败（${c || "未知"}）`, `Generation failed (${c || "unknown"})`);
   }
 
   if (!topic || !account) return null;
@@ -283,7 +291,7 @@ export default function TopicDetailPage() {
   return (
     <div className="max-w-4xl">
       <Button onClick={() => router.push("/topics")} variant="ghost" size="sm" className="mb-4 -ml-2 text-muted-foreground">
-        ← 返回选题列表
+        ← {t("返回选题列表", "Back to Topics")}
       </Button>
 
       {/* Topic header */}
@@ -300,7 +308,7 @@ export default function TopicDetailPage() {
         <div className="flex items-center gap-2">
           {account.products.length > 0 && (
             <div className="flex flex-col gap-0.5 items-end">
-              <label className="text-[10px] text-muted-foreground">脚本主推产品</label>
+              <label className="text-[10px] text-muted-foreground">{t("脚本主推产品", "Script focus product")}</label>
               <select
                 value={scriptProductId}
                 onChange={(e) => setScriptProductId(e.target.value)}
@@ -316,20 +324,27 @@ export default function TopicDetailPage() {
                     </option>
                   );
                 })}
-                <option value="">通用（不指定产品）</option>
+                <option value="">{t("通用（不指定产品）", "Generic (no specific product)")}</option>
               </select>
             </div>
           )}
           <Button onClick={generateAllVariants} disabled={isGenerating} size="sm">
-            {isGenerating ? `生成中（${4 - loadingVariants.size}/4）...` : Object.keys(scripts).length > 0 ? "重新生成 4 组" : "生成 4 组脚本"}
+            {isGenerating
+              ? t(`生成中（${4 - loadingVariants.size}/4）...`, `Generating (${4 - loadingVariants.size}/4)...`)
+              : Object.keys(scripts).length > 0
+                ? t("重新生成 4 组", "Regenerate 4 variants")
+                : t("生成 4 组脚本", "Generate 4 scripts")}
           </Button>
         </div>
       </div>
 
       {/* Seedance 2.0 rule hint */}
       <div className="mb-4 p-2.5 rounded-md bg-muted/50 border text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">Seedance 2.0：</span>
-        分镜数 / 时长 AI 按内容自由发挥（建议 5~8 分镜、10~12 秒，4~15 秒皆可）· 原生 lip-sync + 音频 · 单 prompt 串联
+        <span className="font-medium text-foreground">{t("Seedance 2.0：", "Seedance 2.0:")}</span>
+        {t(
+          "分镜数 / 时长 AI 按内容自由发挥（建议 5~8 分镜、10~12 秒，4~15 秒皆可）· 原生 lip-sync + 音频 · 单 prompt 串联",
+          "Scene count / duration left to the AI (5–8 scenes, 10–12s recommended; 4–15s allowed) · native lip-sync + audio · single chained prompt"
+        )}
       </div>
 
       {error && (
@@ -351,7 +366,7 @@ export default function TopicDetailPage() {
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
-              {v.label}
+              {t(v.labelZh, v.labelEn)}
               {isLoading && <span className="ml-1 text-xs animate-pulse">⏳</span>}
               {hasScript && !isLoading && <span className="ml-1 text-xs text-green-600">✓</span>}
             </button>
@@ -366,13 +381,13 @@ export default function TopicDetailPage() {
             <div className="rounded-lg border overflow-hidden">
               {activeScript.concept && (
                 <div className="p-4 bg-gradient-to-r from-violet-50 to-blue-50 border-b">
-                  <p className="text-xs font-semibold text-violet-800 mb-1.5">AI 创意概念（Step 1: 自由构思）</p>
+                  <p className="text-xs font-semibold text-violet-800 mb-1.5">{t("AI 创意概念（Step 1: 自由构思）", "AI Creative Concept (Step 1: Free ideation)")}</p>
                   <p className="text-sm text-violet-900 leading-relaxed whitespace-pre-wrap">{activeScript.concept}</p>
                 </div>
               )}
               {activeScript.creativeApproach && (
                 <div className="p-3 bg-amber-50/50">
-                  <p className="text-xs font-semibold text-amber-800 mb-0.5">创意核心</p>
+                  <p className="text-xs font-semibold text-amber-800 mb-0.5">{t("创意核心", "Creative core")}</p>
                   <p className="text-sm text-amber-900">{activeScript.creativeApproach}</p>
                 </div>
               )}
@@ -383,19 +398,19 @@ export default function TopicDetailPage() {
             <CardContent className="py-4">
               <div className="grid grid-cols-2 gap-x-8 gap-y-3">
                 <div>
-                  <p className="text-[10px] text-muted-foreground mb-0.5">视频标题</p>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">{t("视频标题", "Video title")}</p>
                   <p className="text-sm font-semibold">{activeScript.title}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-muted-foreground mb-0.5">时长</p>
-                  <p className="text-sm font-medium">{activeScript.totalDuration}秒</p>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">{t("时长", "Duration")}</p>
+                  <p className="text-sm font-medium">{activeScript.totalDuration}{t("秒", "s")}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-muted-foreground mb-0.5">音乐</p>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">{t("音乐", "Music")}</p>
                   <p className="text-sm">{activeScript.musicStyle}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-muted-foreground mb-0.5">标签</p>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">{t("标签", "Tags")}</p>
                   <div className="flex flex-wrap gap-1">
                     {activeScript.hashtags?.map((tag: string, i: number) => (
                       <span key={i} className="text-xs px-1.5 py-0.5 rounded bg-muted">#{tag}</span>
@@ -417,20 +432,20 @@ export default function TopicDetailPage() {
 
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-bold">分镜表</h2>
+              <h2 className="text-base font-bold">{t("分镜表", "Storyboard")}</h2>
             </div>
 
             <div className="rounded-lg border overflow-x-auto">
               <table className="min-w-[900px] w-full text-xs">
                 <thead>
                   <tr className="bg-muted/50 text-left">
-                    <th className="px-3 py-2 w-14">镜号</th>
-                    <th className="px-3 py-2 w-14">秒</th>
-                    <th className="px-3 py-2 w-28">镜头类型</th>
-                    <th className="px-3 py-2 min-w-[300px]">画面</th>
-                    <th className="px-3 py-2 min-w-[120px]">音效/音乐</th>
-                    <th className="px-3 py-2 min-w-[140px]">口播</th>
-                    <th className="px-3 py-2 w-14 text-center">图</th>
+                    <th className="px-3 py-2 w-14">{t("镜号", "Scene")}</th>
+                    <th className="px-3 py-2 w-14">{t("秒", "Sec")}</th>
+                    <th className="px-3 py-2 w-28">{t("镜头类型", "Shot type")}</th>
+                    <th className="px-3 py-2 min-w-[300px]">{t("画面", "Visual")}</th>
+                    <th className="px-3 py-2 min-w-[120px]">{t("音效/音乐", "SFX / Music")}</th>
+                    <th className="px-3 py-2 min-w-[140px]">{t("口播", "Voiceover")}</th>
+                    <th className="px-3 py-2 w-14 text-center">{t("图", "Img")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -456,7 +471,7 @@ export default function TopicDetailPage() {
                         <td className="px-3 py-2.5 text-muted-foreground">
                           <p className="text-[11px] leading-relaxed">{audio}</p>
                         </td>
-                        <td className="px-3 py-2.5 font-medium">{scene.text || <span className="text-muted-foreground italic">无</span>}</td>
+                        <td className="px-3 py-2.5 font-medium">{scene.text || <span className="text-muted-foreground italic">{t("无", "None")}</span>}</td>
                         <td className="px-3 py-2.5 text-center">
                           {img ? (
                             <img src={img} alt={`P${sn}`} className="w-10 h-14 object-cover rounded mx-auto" />
@@ -466,7 +481,7 @@ export default function TopicDetailPage() {
                               disabled={generatingScene !== null}
                               className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
                             >
-                              {generatingScene === imgKey ? "..." : "生成"}
+                              {generatingScene === imgKey ? "..." : t("生成", "Generate")}
                             </button>
                           )}
                         </td>
@@ -481,7 +496,7 @@ export default function TopicDetailPage() {
 
           {activeScript.fullText && activeScript.fullText !== "（音乐卡点版，无口播）" && (
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">完整口播稿</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">{t("完整口播稿", "Full voiceover script")}</CardTitle></CardHeader>
               <CardContent>
                 <p className="text-sm whitespace-pre-wrap leading-relaxed">{activeScript.fullText}</p>
               </CardContent>
@@ -490,7 +505,7 @@ export default function TopicDetailPage() {
 
           {activeScript.notes && (
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">导演备注</CardTitle></CardHeader>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">{t("导演备注", "Director's notes")}</CardTitle></CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap">{activeScript.notes}</p>
               </CardContent>
@@ -516,9 +531,9 @@ export default function TopicDetailPage() {
               <Card>
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between gap-3">
-                    <CardTitle className="text-sm">视频 Demo</CardTitle>
+                    <CardTitle className="text-sm">{t("视频 Demo", "Video Demo")}</CardTitle>
                     <Button onClick={generateVideo} disabled={vs.loading} size="sm" variant={vs.url ? "outline" : "default"}>
-                      {vs.loading ? vs.status : vs.url ? "重新生成" : "生成视频（Seedance 2.0）"}
+                      {vs.loading ? vs.status : vs.url ? t("重新生成", "Regenerate") : t("生成视频（Seedance 2.0）", "Generate video (Seedance 2.0)")}
                     </Button>
                   </div>
                   {/* 参考产品图（可选，最多 9 张） */}
@@ -534,9 +549,9 @@ export default function TopicDetailPage() {
                           }}
                           data-testid="ref-images-toggle"
                         />
-                        <span>参考产品图（Seedance 智能参考，最多 9 张）</span>
+                        <span>{t("参考产品图（Seedance 智能参考，最多 9 张）", "Reference product images (Seedance smart reference, up to 9)")}</span>
                         {useRefImages && refImageUrls.length > 0 && (
-                          <span className="text-muted-foreground">已选 {refImageUrls.length}/{MAX_REF_IMAGES}</span>
+                          <span className="text-muted-foreground">{t(`已选 ${refImageUrls.length}/${MAX_REF_IMAGES}`, `Selected ${refImageUrls.length}/${MAX_REF_IMAGES}`)}</span>
                         )}
                       </label>
                       {useRefImages && (
@@ -555,7 +570,7 @@ export default function TopicDetailPage() {
                                 data-testid={`ref-image-${idx}`}
                               >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={img} alt={`ref ${idx + 1}`} className="w-full h-full object-cover" />
+                                <img src={img} alt={t(`参考图 ${idx + 1}`, `Reference image ${idx + 1}`)} className="w-full h-full object-cover" />
                                 {selected && (
                                   <span className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-primary text-white text-[10px] flex items-center justify-center font-bold">
                                     {refImageUrls.indexOf(img) + 1}
@@ -574,8 +589,8 @@ export default function TopicDetailPage() {
                     <div className="space-y-3">
                       <video src={vs.url} controls className="w-full max-w-sm mx-auto rounded-lg shadow-lg" playsInline />
                       <div className="flex justify-center gap-3">
-                        <a href={vs.url} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:underline">新窗口 ↗</a>
-                        <a href={vs.url} download className="text-xs text-muted-foreground hover:underline">下载</a>
+                        <a href={vs.url} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:underline">{t("新窗口 ↗", "New window ↗")}</a>
+                        <a href={vs.url} download className="text-xs text-muted-foreground hover:underline">{t("下载", "Download")}</a>
                       </div>
                     </div>
                   ) : vs.loading ? (
@@ -588,7 +603,7 @@ export default function TopicDetailPage() {
                       <div className="flex items-start gap-2">
                         <span className="text-destructive shrink-0">⚠</span>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-destructive">视频生成失败</p>
+                          <p className="font-medium text-destructive">{t("视频生成失败", "Video generation failed")}</p>
                           <p className="text-foreground/80 mt-1 text-xs leading-relaxed">{vs.error}</p>
                           {vs.errorCode && (
                             <p className="text-muted-foreground mt-1 text-[10px] font-mono">code: {vs.errorCode}</p>
@@ -600,18 +615,18 @@ export default function TopicDetailPage() {
                             className="mt-2 h-7 text-xs cursor-pointer"
                             disabled={vs.loading}
                           >
-                            重新尝试
+                            {t("重新尝试", "Try again")}
                           </Button>
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground text-center py-4">基于当前 tab 的分镜生成视频</p>
+                    <p className="text-sm text-muted-foreground text-center py-4">{t("基于当前 tab 的分镜生成视频", "Generate a video from the current tab's storyboard")}</p>
                   )}
 
                   <details>
                     <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
-                      查看发送给 Seedance 2.0 的实际提示词（随产品/参考图选择实时变化）
+                      {t("查看发送给 Seedance 2.0 的实际提示词（随产品/参考图选择实时变化）", "View the actual prompt sent to Seedance 2.0 (updates live with product/reference image selection)")}
                     </summary>
                     <div className="mt-2 rounded-lg bg-slate-950 text-slate-200 p-4 space-y-3">
                       {(() => {
@@ -632,9 +647,9 @@ export default function TopicDetailPage() {
                         return (
                           <>
                             <p className="text-[10px] text-slate-400">
-                              单 prompt 串联多镜头 · 总时长 {totalDuration}s · {isVoiceover ? "原生口播 lip-sync" : "无口播"}
-                              {previewProductName && <> · 主体「{previewProductName}」</>}
-                              {previewRefCount > 0 && <> · 引用 {previewRefCount} 张参考图</>}
+                              {t("单 prompt 串联多镜头", "Single prompt chains multiple scenes")} · {t("总时长", "Total duration")} {totalDuration}s · {isVoiceover ? t("原生口播 lip-sync", "Native voiceover lip-sync") : t("无口播", "No voiceover")}
+                              {previewProductName && <> · {t(`主体「${previewProductName}」`, `Subject "${previewProductName}"`)}</>}
+                              {previewRefCount > 0 && <> · {t(`引用 ${previewRefCount} 张参考图`, `${previewRefCount} reference image${previewRefCount > 1 ? "s" : ""} referenced`)}</>}
                             </p>
                             <p className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap" data-testid="prompt-preview">{prompt}</p>
                           </>
@@ -651,16 +666,19 @@ export default function TopicDetailPage() {
         <div className="text-center py-20">
           <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">
-            {VARIANTS.find((v) => v.key === activeTab)?.desc}...
+            {(() => {
+              const v = VARIANTS.find((v) => v.key === activeTab);
+              return v ? t(v.descZh, v.descEn) : "";
+            })()}...
           </p>
         </div>
       ) : (
         <Card>
           <CardContent className="py-16 text-center">
-            <p className="text-muted-foreground text-sm mb-2">点击"生成 4 组脚本"，AI 将并行创作 4 种风格：</p>
+            <p className="text-muted-foreground text-sm mb-2">{t('点击"生成 4 组脚本"，AI 将并行创作 4 种风格：', 'Click "Generate 4 scripts" and the AI will produce 4 styles in parallel:')}</p>
             <div className="flex flex-wrap gap-2 justify-center">
               {VARIANTS.map((v) => (
-                <span key={v.key} className="text-xs px-2.5 py-1 rounded-full bg-muted">{v.label}：{v.desc}</span>
+                <span key={v.key} className="text-xs px-2.5 py-1 rounded-full bg-muted">{t(v.labelZh, v.labelEn)}{t("：", ": ")}{t(v.descZh, v.descEn)}</span>
               ))}
             </div>
           </CardContent>

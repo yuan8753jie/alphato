@@ -10,11 +10,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { ClipboardCheck } from "lucide-react";
 import { getAccount, getTopics, saveTopics, getTrends, getReviewPersonas, saveReviewPersonas, getReviewResults, saveReviewResults, saveSelectedTrendsMeta, getSelectedTrendsMeta } from "@/lib/store";
 import type { Account, Topic, TopicStatus, TopicType, Trend, SelectedTrendsMeta } from "@/lib/types";
-import { TOPIC_TYPE_LABELS } from "@/lib/types";
+import { useLang } from "@/lib/i18n";
 
-const STATUS_LABEL: Record<TopicStatus, string> = {
-  pending: "待定", approved: "采用", rejected: "放弃", hold: "留存",
-};
 const STATUS_VARIANT: Record<TopicStatus, "default" | "secondary" | "destructive" | "outline"> = {
   pending: "outline", approved: "default", rejected: "destructive", hold: "secondary",
 };
@@ -29,6 +26,19 @@ type SelectedTrend = SelectedTrendsMeta["selectedTrends"][number];
 
 export default function TopicsPage() {
   const router = useRouter();
+  const { t } = useLang();
+  const STATUS_LABEL: Record<TopicStatus, string> = {
+    pending: t("待定", "Pending"),
+    approved: t("采用", "Approved"),
+    rejected: t("放弃", "Rejected"),
+    hold: t("留存", "Hold"),
+  };
+  const TYPE_LABEL: Record<TopicType, string> = {
+    traffic: t("流量型", "Traffic"),
+    trust: t("信任型", "Trust"),
+    conversion: t("转化型", "Conversion"),
+    persona: t("人设型", "Persona"),
+  };
   const [account, setAccount] = useState<Account | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [trends, setTrends] = useState<Trend[]>([]);
@@ -132,14 +142,14 @@ export default function TopicsPage() {
           saveSelectedTrendsMeta(meta);
         } else if (i === 0) {
           // 首轮就失败：报错退出
-          lastError = data.error || "选题生成失败";
+          lastError = data.error || t("选题生成失败", "Topic generation failed");
           break;
         }
         // 后续轮失败：保留前面的成果，静默跳过
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
-        lastError = "请求失败：" + String(err);
+        lastError = t("请求失败：", "Request failed: ") + String(err);
       }
     } finally {
       setLoading(null);
@@ -183,7 +193,7 @@ export default function TopicsPage() {
         });
         const personaData = await personaRes.json();
         if (!personaData.success || !personaData.personas?.length) {
-          setError(personaData.error || "Persona 生成失败");
+          setError(personaData.error || t("Persona 生成失败", "Persona generation failed"));
           setReviewStep("idle");
           setLoading(null);
           return;
@@ -273,7 +283,7 @@ export default function TopicsPage() {
         return latestResults;
       });
     } catch (err) {
-      setError("请求失败：" + String(err));
+      setError(t("请求失败：", "Request failed: ") + String(err));
       setReviewStep("idle");
     } finally {
       setLoading(null);
@@ -334,13 +344,13 @@ export default function TopicsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold">选题</h1>
+          <h1 className="text-xl font-bold">{t("选题", "Topics")}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            基于热点池为品牌策划的内容选题
+            {t("基于热点池为品牌策划的内容选题", "Brand content topics curated from the trend pool")}
             {topics.length > 0 && (
               <span className="ml-2">
-                · 采用 {topics.filter((t) => t.status === "approved").length}
-                · 待定 {topics.filter((t) => t.status === "pending").length}
+                · {t("采用", "Approved")} {topics.filter((tp) => tp.status === "approved").length}
+                · {t("待定", "Pending")} {topics.filter((tp) => tp.status === "pending").length}
               </span>
             )}
           </p>
@@ -349,16 +359,16 @@ export default function TopicsPage() {
             const genDate = selectedTrendsMeta.generatedAt.split("T")[0];
             return (
               <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1.5 flex-wrap">
-                <span>基于 {selectedTrendsMeta.trendsPoolSize} 条热点</span>
+                <span>{t(`基于 ${selectedTrendsMeta.trendsPoolSize} 条热点`, `Based on ${selectedTrendsMeta.trendsPoolSize} trends`)}</span>
                 <span>·</span>
-                <span>AI 精选 {selectedTrendsMeta.selectedTrends.length} 条</span>
+                <span>{t(`AI 精选 ${selectedTrendsMeta.selectedTrends.length} 条`, `${selectedTrendsMeta.selectedTrends.length} AI-picked`)}</span>
                 <span>·</span>
-                <span>生成 {selectedTrendsMeta.topicsGenerated} 个选题</span>
+                <span>{t(`生成 ${selectedTrendsMeta.topicsGenerated} 个选题`, `Generated ${selectedTrendsMeta.topicsGenerated} topics`)}</span>
                 <span>·</span>
-                <span>更新于 {genDate}</span>
+                <span>{t(`更新于 ${genDate}`, `Updated ${genDate}`)}</span>
                 {poolChanged && trends.length > 0 && (
                   <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px]">
-                    热点池已更新到 {trends.length} 条，建议重新生成
+                    {t(`热点池已更新到 ${trends.length} 条，建议重新生成`, `Trend pool updated to ${trends.length}; consider regenerating`)}
                   </span>
                 )}
               </p>
@@ -368,38 +378,41 @@ export default function TopicsPage() {
         <div className="flex items-center gap-2">
           {loading && (
             <Button onClick={stopCurrentTask} variant="destructive" size="sm">
-              停止
+              {t("停止", "Stop")}
             </Button>
           )}
           {trends.length === 0 && !loading && (
             <Button onClick={() => router.push("/discover")} variant="outline" size="sm">
-              先去发现热点 →
+              {t("先去发现热点 →", "Discover trends first →")}
             </Button>
           )}
           {trends.length > 0 && (() => {
             const focusName = filterProduct && filterProduct !== ""
               ? productNameById.get(filterProduct)
               : null;
-            const focusFragment = focusName
-              ? `为「${focusName}」生成`
-              : filterProduct === ""
-                ? "生成通用"
-                : "生成";
             const generateLabel = loading
               ? batchRounds > 1
-                ? `第 ${currentRound}/${batchRounds} 轮中...`
+                ? t(`第 ${currentRound}/${batchRounds} 轮中...`, `Round ${currentRound}/${batchRounds}...`)
                 : loading === "selecting"
-                  ? "分析热点中..."
-                  : "生成选题中..."
+                  ? t("分析热点中...", "Analyzing trends...")
+                  : t("生成选题中...", "Generating topics...")
               : batchRounds > 1
-                ? `${focusFragment} ${batchRounds} 轮选题`
-                : `${focusFragment}选题`.replace(/^生成/, "生成") || "生成选题";
+                ? focusName
+                  ? t(`为「${focusName}」生成 ${batchRounds} 轮选题`, `Generate ${batchRounds} rounds for "${focusName}"`)
+                  : filterProduct === ""
+                    ? t(`生成通用 ${batchRounds} 轮选题`, `Generate ${batchRounds} generic rounds`)
+                    : t(`生成 ${batchRounds} 轮选题`, `Generate ${batchRounds} rounds`)
+                : focusName
+                  ? t(`为「${focusName}」生成选题`, `Generate topics for "${focusName}"`)
+                  : filterProduct === ""
+                    ? t("生成通用选题", "Generate generic topics")
+                    : t("生成选题", "Generate topics");
             return (
               <>
                 {/* 轮次切换 */}
                 {!loading && (
                   <div className="flex items-center gap-1" data-testid="batch-rounds-picker">
-                    <span className="text-[10px] text-muted-foreground mr-0.5">轮次</span>
+                    <span className="text-[10px] text-muted-foreground mr-0.5">{t("轮次", "Rounds")}</span>
                     {[1, 3, 5].map((n) => (
                       <button
                         key={n}
@@ -421,20 +434,20 @@ export default function TopicsPage() {
           {topics.length > 0 && (
             <>
               <Button onClick={() => reviewTopics()} disabled={loading !== null} variant="outline" size="sm">
-                {loading === "reviewing" ? "评审中..." : reviewPersonas.length > 0 ? "AI Review（复用 Persona）" : "AI Review"}
+                {loading === "reviewing" ? t("评审中...", "Reviewing...") : reviewPersonas.length > 0 ? t("AI Review（复用 Persona）", "AI Review (reuse personas)") : t("AI Review", "AI Review")}
               </Button>
               {reviewPersonas.length > 0 && !loading && (
                 <button
                   onClick={() => reviewTopics(true)}
                   disabled={loading !== null}
                   className="text-[10px] text-muted-foreground hover:text-foreground"
-                  title="重新生成审稿团"
+                  title={t("重新生成审稿团", "Regenerate review panel")}
                 >
-                  换一批审稿人
+                  {t("换一批审稿人", "Swap reviewers")}
                 </button>
               )}
               {(reviewStep !== "idle" || Object.keys(reviewResults).length > 0) && (
-                <Button variant="ghost" size="sm" className="px-2" title="查看评审过程" onClick={() => setDrawerOpen(true)}>
+                <Button variant="ghost" size="sm" className="px-2" title={t("查看评审过程", "View review process")} onClick={() => setDrawerOpen(true)}>
                   <ClipboardCheck size={16} />
                 </Button>
               )}
@@ -446,11 +459,11 @@ export default function TopicsPage() {
             <SheetContent className="overflow-y-auto p-0">
               <div className="sticky top-0 bg-background/95 backdrop-blur border-b px-6 py-4 z-[1]">
                 <SheetHeader>
-                  <SheetTitle className="text-lg">AI 评审过程</SheetTitle>
+                  <SheetTitle className="text-lg">{t("AI 评审过程", "AI Review Process")}</SheetTitle>
                 </SheetHeader>
                 {reviewStep === "done" && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    {reviewPersonas.length} 位审稿人 · {Object.keys(reviewResults).length} 条选题 · 评审完成
+                    {t(`${reviewPersonas.length} 位审稿人 · ${Object.keys(reviewResults).length} 条选题 · 评审完成`, `${reviewPersonas.length} reviewers · ${Object.keys(reviewResults).length} topics · Review complete`)}
                   </p>
                 )}
               </div>
@@ -467,11 +480,11 @@ export default function TopicsPage() {
                     </div>
                     <div>
                       <h3 className="text-sm font-semibold">
-                        {reviewStep === "personas" ? "正在分析品牌受众，生成审稿团..." :
-                         reviewPersonas.length > 0 ? `审稿团就位（${reviewPersonas.length} 人）` : "生成审稿团"}
+                        {reviewStep === "personas" ? t("正在分析品牌受众，生成审稿团...", "Analyzing brand audience and assembling reviewers...") :
+                         reviewPersonas.length > 0 ? t(`审稿团就位（${reviewPersonas.length} 人）`, `Review panel ready (${reviewPersonas.length})`) : t("生成审稿团", "Generate review panel")}
                       </h3>
                       {reviewStep === "personas" && (
-                        <p className="text-xs text-muted-foreground">AI 正在基于以下信息构建虚拟目标用户...</p>
+                        <p className="text-xs text-muted-foreground">{t("AI 正在基于以下信息构建虚拟目标用户...", "AI is building virtual target users from the info below...")}</p>
                       )}
                     </div>
                   </div>
@@ -481,38 +494,38 @@ export default function TopicsPage() {
                     <div className="ml-11 rounded-xl border bg-muted/30 p-4 space-y-2 animate-pulse">
                       <div className="text-[11px] space-y-1.5">
                         <div className="flex gap-2">
-                          <span className="text-muted-foreground shrink-0">品牌</span>
+                          <span className="text-muted-foreground shrink-0">{t("品牌", "Brand")}</span>
                           <span className="font-medium">{account.brand.name}</span>
                         </div>
                         <div className="flex gap-2">
-                          <span className="text-muted-foreground shrink-0">行业</span>
+                          <span className="text-muted-foreground shrink-0">{t("行业", "Industry")}</span>
                           <span className="font-medium">{account.brand.industry}</span>
                         </div>
                         <div className="flex gap-2">
-                          <span className="text-muted-foreground shrink-0">调性</span>
+                          <span className="text-muted-foreground shrink-0">{t("调性", "Tone")}</span>
                           <span className="font-medium line-clamp-2">{account.brand.tone}</span>
                         </div>
                         {account.products.length > 0 && (
                           <div className="flex gap-2">
-                            <span className="text-muted-foreground shrink-0">产品</span>
-                            <span className="font-medium">{account.products.map((p) => p.name).join("、")}</span>
+                            <span className="text-muted-foreground shrink-0">{t("产品", "Products")}</span>
+                            <span className="font-medium">{account.products.map((p) => p.name).join(t("、", ", "))}</span>
                           </div>
                         )}
                         {account.personas.length > 0 && (
                           <div className="flex gap-2">
-                            <span className="text-muted-foreground shrink-0">参考受众</span>
-                            <span className="font-medium">{account.personas.map((p) => p.name).join("、")}</span>
+                            <span className="text-muted-foreground shrink-0">{t("参考受众", "Reference audience")}</span>
+                            <span className="font-medium">{account.personas.map((p) => p.name).join(t("、", ", "))}</span>
                           </div>
                         )}
                         {(account.brandMaterials?.length || 0) > 0 && (
                           <div className="flex gap-2">
-                            <span className="text-muted-foreground shrink-0">品牌资料</span>
-                            <span className="font-medium">{account.brandMaterials.length} 份</span>
+                            <span className="text-muted-foreground shrink-0">{t("品牌资料", "Brand materials")}</span>
+                            <span className="font-medium">{t(`${account.brandMaterials.length} 份`, `${account.brandMaterials.length} files`)}</span>
                           </div>
                         )}
                       </div>
                       <p className="text-[10px] text-muted-foreground pt-1 border-t">
-                        AI 正在综合分析以上信息，结合平台用户特征，构建 5~7 个代表性受众画像...
+                        {t("AI 正在综合分析以上信息，结合平台用户特征，构建 5~7 个代表性受众画像...", "AI is synthesizing the info above with platform user traits to build 5~7 representative audience personas...")}
                       </p>
                     </div>
                   )}
@@ -520,10 +533,10 @@ export default function TopicsPage() {
                   {/* AI reasoning */}
                   {reviewResearch && (
                     <div className="ml-11 mb-4 rounded-xl border bg-slate-50 p-4 space-y-3">
-                      <h4 className="text-xs font-semibold">AI 分析思路</h4>
+                      <h4 className="text-xs font-semibold">{t("AI 分析思路", "AI reasoning")}</h4>
                       {reviewResearch.dimensions?.length > 0 && (
                         <div>
-                          <p className="text-[10px] font-medium text-muted-foreground mb-1">考虑维度</p>
+                          <p className="text-[10px] font-medium text-muted-foreground mb-1">{t("考虑维度", "Dimensions considered")}</p>
                           <div className="flex flex-wrap gap-1">
                             {reviewResearch.dimensions.map((d: string, i: number) => (
                               <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-medium">{d}</span>
@@ -533,13 +546,13 @@ export default function TopicsPage() {
                       )}
                       {reviewResearch.logic && (
                         <div>
-                          <p className="text-[10px] font-medium text-muted-foreground mb-1">构建逻辑</p>
+                          <p className="text-[10px] font-medium text-muted-foreground mb-1">{t("构建逻辑", "Construction logic")}</p>
                           <p className="text-[11px] leading-relaxed">{reviewResearch.logic}</p>
                         </div>
                       )}
                       {reviewResearch.coverage && (
                         <div>
-                          <p className="text-[10px] font-medium text-muted-foreground mb-1">覆盖度</p>
+                          <p className="text-[10px] font-medium text-muted-foreground mb-1">{t("覆盖度", "Coverage")}</p>
                           <p className="text-[11px] leading-relaxed">{reviewResearch.coverage}</p>
                         </div>
                       )}
@@ -557,23 +570,23 @@ export default function TopicsPage() {
                             </div>
                             <div>
                               <p className="text-sm font-semibold">{p.name}</p>
-                              <p className="text-[11px] text-muted-foreground">{p.age}岁 · {p.gender} · {p.occupation}</p>
+                              <p className="text-[11px] text-muted-foreground">{t(`${p.age}岁 · ${p.gender} · ${p.occupation}`, `${p.age} · ${p.gender} · ${p.occupation}`)}</p>
                             </div>
                           </div>
                           <p className="text-xs text-muted-foreground leading-relaxed">{p.profile}</p>
                           {p.contentPreference && (
                             <p className="text-[10px] text-muted-foreground">
-                              <span className="font-medium text-foreground">偏好：</span>{p.contentPreference}
+                              <span className="font-medium text-foreground">{t("偏好：", "Preference: ")}</span>{p.contentPreference}
                             </p>
                           )}
                           {p.brandAwareness && (
                             <p className="text-[10px] text-muted-foreground">
-                              <span className="font-medium text-foreground">品牌认知：</span>{p.brandAwareness}
+                              <span className="font-medium text-foreground">{t("品牌认知：", "Brand awareness: ")}</span>{p.brandAwareness}
                             </p>
                           )}
                           {p.whyIncluded && (
                             <p className="text-[10px] text-blue-600 italic mt-1">
-                              入选原因：{p.whyIncluded}
+                              {t("入选原因：", "Why included: ")}{p.whyIncluded}
                             </p>
                           )}
                         </div>
@@ -595,10 +608,10 @@ export default function TopicsPage() {
                       <div>
                         <h3 className="text-sm font-semibold">
                           {reviewStep === "reviewing"
-                            ? `逐条评审中（${Object.values(reviewResults).filter((r) => r.status === "done").length}/${topics.length}）`
-                            : `评审完成（${topics.length} 条）`}
+                            ? t(`逐条评审中（${Object.values(reviewResults).filter((r) => r.status === "done").length}/${topics.length}）`, `Reviewing (${Object.values(reviewResults).filter((r) => r.status === "done").length}/${topics.length})`)
+                            : t(`评审完成（${topics.length} 条）`, `Review complete (${topics.length})`)}
                         </h3>
-                        <p className="text-xs text-muted-foreground">每条选题由 {reviewPersonas.length} 位审稿人独立评审</p>
+                        <p className="text-xs text-muted-foreground">{t(`每条选题由 ${reviewPersonas.length} 位审稿人独立评审`, `Each topic independently reviewed by ${reviewPersonas.length} reviewers`)}</p>
                       </div>
                     </div>
 
@@ -609,7 +622,7 @@ export default function TopicsPage() {
                           return (
                             <div key={topic.id} className="rounded-xl border p-4 opacity-40">
                               <p className="text-sm text-muted-foreground">{topic.title}</p>
-                              <p className="text-xs text-muted-foreground mt-1">等待评审...</p>
+                              <p className="text-xs text-muted-foreground mt-1">{t("等待评审...", "Waiting for review...")}</p>
                             </div>
                           );
                         }
@@ -637,7 +650,7 @@ export default function TopicsPage() {
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium truncate">{topic.title}</p>
                                 <p className="text-[10px] text-muted-foreground">
-                                  {result.personaReviews.length}/{reviewPersonas.length} 位审稿人已完成
+                                  {t(`${result.personaReviews.length}/${reviewPersonas.length} 位审稿人已完成`, `${result.personaReviews.length}/${reviewPersonas.length} reviewers done`)}
                                 </p>
                               </div>
                             </div>
@@ -650,10 +663,10 @@ export default function TopicsPage() {
                                   const getS = (v: any) => typeof v === "object" && v !== null ? v.score : Number(v) || 0;
                                   const getR = (v: any) => typeof v === "object" && v !== null ? v.reason : "";
                                   const dims = [
-                                    { key: "stop", label: "停留", score: getS(pr.stop), reason: getR(pr.stop) },
-                                    { key: "watch", label: "完播", score: getS(pr.watch), reason: getR(pr.watch) },
-                                    { key: "engage", label: "互动", score: getS(pr.engage), reason: getR(pr.engage) },
-                                    { key: "convert", label: "转化", score: getS(pr.convert), reason: getR(pr.convert) },
+                                    { key: "stop", label: t("停留", "Stop"), score: getS(pr.stop), reason: getR(pr.stop) },
+                                    { key: "watch", label: t("完播", "Watch"), score: getS(pr.watch), reason: getR(pr.watch) },
+                                    { key: "engage", label: t("互动", "Engage"), score: getS(pr.engage), reason: getR(pr.engage) },
+                                    { key: "convert", label: t("转化", "Convert"), score: getS(pr.convert), reason: getR(pr.convert) },
                                   ];
                                   const avg = (dims.reduce((s, d) => s + d.score, 0) / 4).toFixed(1);
                                   return (
@@ -720,7 +733,7 @@ export default function TopicsPage() {
           <CardContent className="py-3">
             <details>
               <summary className="cursor-pointer text-sm font-medium flex items-center gap-2 hover:text-foreground text-muted-foreground">
-                <span>AI 精选的 {selectedTrends.length} 条热点（从 {selectedTrendsMeta?.trendsPoolSize ?? trends.length} 条中筛出）</span>
+                <span>{t(`AI 精选的 ${selectedTrends.length} 条热点（从 ${selectedTrendsMeta?.trendsPoolSize ?? trends.length} 条中筛出）`, `${selectedTrends.length} AI-picked trends (out of ${selectedTrendsMeta?.trendsPoolSize ?? trends.length})`)}</span>
                 <span className="text-xs">▼</span>
               </summary>
               <div className="flex flex-wrap gap-2 mt-3">
@@ -749,13 +762,13 @@ export default function TopicsPage() {
           {/* Product filter — 仅当品牌有产品时显示 */}
           {account.products.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap" data-testid="product-filter-row">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mr-1">产品</span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mr-1">{t("产品", "Product")}</span>
               <button
                 onClick={() => setFilterProduct(null)}
                 className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterProduct === null ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
                 data-testid="product-chip-all"
               >
-                全部 ({topics.length})
+                {t("全部", "All")} ({topics.length})
               </button>
               {genericCount > 0 && (
                 <button
@@ -763,7 +776,7 @@ export default function TopicsPage() {
                   className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterProduct === "" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
                   data-testid="product-chip-generic"
                 >
-                  通用 ({genericCount})
+                  {t("通用", "Generic")} ({genericCount})
                 </button>
               )}
               {account.products.map((p) => {
@@ -785,22 +798,22 @@ export default function TopicsPage() {
 
           {/* Type filter */}
           <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mr-1">类型</span>
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mr-1">{t("类型", "Type")}</span>
             <button
               onClick={() => setFilterType("all")}
               className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterType === "all" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
             >
-              全部 ({filteredByProduct.length})
+              {t("全部", "All")} ({filteredByProduct.length})
             </button>
             {(["traffic", "trust", "conversion", "persona"] as TopicType[]).map((type) => {
-              const count = filteredByProduct.filter((t) => t.type === type).length;
+              const count = filteredByProduct.filter((tp) => tp.type === type).length;
               return count > 0 ? (
                 <button
                   key={type}
                   onClick={() => setFilterType(type)}
                   className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterType === type ? TYPE_COLORS[type] + " font-medium" : "bg-muted hover:bg-muted/80"}`}
                 >
-                  {TOPIC_TYPE_LABELS[type]} ({count})
+                  {TYPE_LABEL[type]} ({count})
                 </button>
               ) : null;
             })}
@@ -809,7 +822,7 @@ export default function TopicsPage() {
                 onClick={() => setSortBy(sortBy === "score" ? "default" : "score")}
                 className={`text-xs px-2.5 py-1 rounded-md transition-colors ml-auto cursor-pointer ${sortBy === "score" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
               >
-                {sortBy === "score" ? "按评分排序 ✓" : "按评分排序"}
+                {sortBy === "score" ? t("按评分排序 ✓", "Sort by score ✓") : t("按评分排序", "Sort by score")}
               </button>
             )}
           </div>
@@ -821,7 +834,7 @@ export default function TopicsPage() {
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${TYPE_COLORS[topic.type] || ""}`}>
-                        {TOPIC_TYPE_LABELS[topic.type] || topic.type}
+                        {TYPE_LABEL[topic.type] || topic.type}
                       </span>
                       <Badge variant={STATUS_VARIANT[topic.status]} className="text-[10px] h-4 px-1.5">
                         {STATUS_LABEL[topic.status]}
@@ -831,8 +844,8 @@ export default function TopicsPage() {
                         const ids = topic.productIds || [];
                         if (ids.length === 0) {
                           return (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-slate-100 text-slate-600" title="未绑定具体产品">
-                              通用
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-slate-100 text-slate-600" title={t("未绑定具体产品", "Not bound to a specific product")}>
+                              {t("通用", "Generic")}
                             </span>
                           );
                         }
@@ -863,7 +876,7 @@ export default function TopicsPage() {
                       if (review?.status === "reviewing") {
                         return (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium animate-pulse">
-                            评审中 {review.personaReviews.length}/{reviewPersonas.length}
+                            {t("评审中", "Reviewing")} {review.personaReviews.length}/{reviewPersonas.length}
                           </span>
                         );
                       }
@@ -873,12 +886,12 @@ export default function TopicsPage() {
                             review.averageScore >= 7 ? "bg-green-100 text-green-700" :
                             review.averageScore >= 5 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
                           }`}>
-                            {review.averageScore}分
+                            {t(`${review.averageScore}分`, `${review.averageScore} pts`)}
                           </span>
                         );
                       }
                       if (reviewStep !== "idle" && !review) {
-                        return <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">等待中</span>;
+                        return <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{t("等待中", "Waiting")}</span>;
                       }
                       return null;
                     })()}
@@ -890,7 +903,7 @@ export default function TopicsPage() {
                   <p className="text-xs line-clamp-3 mb-2">{topic.description}</p>
                   {topic.relatedTrendIds?.length > 0 && (
                     <p className="text-[10px] text-muted-foreground mb-2 line-clamp-1">
-                      基于：{topic.relatedTrendIds.join("、")}
+                      {t("基于：", "Based on: ")}{topic.relatedTrendIds.join(t("、", ", "))}
                     </p>
                   )}
                   <div className="flex gap-1.5">
@@ -913,31 +926,31 @@ export default function TopicsPage() {
         </div>
       ) : (
         <div className="text-center py-20 max-w-xl mx-auto">
-          <h3 className="text-lg font-medium mb-2">选题池为空</h3>
+          <h3 className="text-lg font-medium mb-2">{t("选题池为空", "Topic pool is empty")}</h3>
           <p className="text-sm text-muted-foreground mb-6">
             {trends.length > 0
-              ? `热点池有 ${trends.length} 条热点，AI 会先筛选最相关的，再生成选题`
-              : "请先到「发现」页面抓取热点"}
+              ? t(`热点池有 ${trends.length} 条热点，AI 会先筛选最相关的，再生成选题`, `Trend pool has ${trends.length} trends. AI will pick the most relevant first, then generate topics.`)
+              : t("请先到「发现」页面抓取热点", "Please go to the Discover page to fetch trends first")}
           </p>
 
           {/* 空状态下的产品选择 — 让首次生成也能 focus 到某款产品 */}
           {trends.length > 0 && account.products.length > 0 && (
             <div className="mb-6 px-4 py-3 rounded-lg bg-muted/30 border" data-testid="empty-state-product-picker">
               <p className="text-xs text-muted-foreground mb-2">
-                本次为哪款产品生成选题？
+                {t("本次为哪款产品生成选题？", "Which product are we generating topics for?")}
               </p>
               <div className="flex items-center gap-2 flex-wrap justify-center">
                 <button
                   onClick={() => setFilterProduct(null)}
                   className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterProduct === null ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
                 >
-                  AI 自动判断（混合品牌+产品）
+                  {t("AI 自动判断（混合品牌+产品）", "AI auto (mix brand + products)")}
                 </button>
                 <button
                   onClick={() => setFilterProduct("")}
                   className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterProduct === "" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
                 >
-                  通用（不绑产品）
+                  {t("通用（不绑产品）", "Generic (no product)")}
                 </button>
                 {account.products.map((p) => (
                   <button
@@ -956,23 +969,26 @@ export default function TopicsPage() {
             const focusName = filterProduct && filterProduct !== ""
               ? productNameById.get(filterProduct)
               : null;
-            const focusFragment = focusName
-              ? `为「${focusName}」生成`
-              : filterProduct === ""
-                ? "生成通用"
-                : "生成";
             const label = loading
               ? batchRounds > 1
-                ? `第 ${currentRound}/${batchRounds} 轮中...`
-                : "生成中..."
+                ? t(`第 ${currentRound}/${batchRounds} 轮中...`, `Round ${currentRound}/${batchRounds}...`)
+                : t("生成中...", "Generating...")
               : batchRounds > 1
-                ? `${focusFragment} ${batchRounds} 轮选题`
-                : `${focusFragment}选题`;
+                ? focusName
+                  ? t(`为「${focusName}」生成 ${batchRounds} 轮选题`, `Generate ${batchRounds} rounds for "${focusName}"`)
+                  : filterProduct === ""
+                    ? t(`生成通用 ${batchRounds} 轮选题`, `Generate ${batchRounds} generic rounds`)
+                    : t(`生成 ${batchRounds} 轮选题`, `Generate ${batchRounds} rounds`)
+                : focusName
+                  ? t(`为「${focusName}」生成选题`, `Generate topics for "${focusName}"`)
+                  : filterProduct === ""
+                    ? t("生成通用选题", "Generate generic topics")
+                    : t("生成选题", "Generate topics");
             return (
               <div className="flex items-center justify-center gap-3 flex-wrap">
                 {!loading && (
                   <div className="flex items-center gap-1">
-                    <span className="text-[10px] text-muted-foreground mr-0.5">轮次</span>
+                    <span className="text-[10px] text-muted-foreground mr-0.5">{t("轮次", "Rounds")}</span>
                     {[1, 3, 5].map((n) => (
                       <button
                         key={n}
@@ -991,7 +1007,7 @@ export default function TopicsPage() {
             );
           })() : (
             <Button onClick={() => router.push("/discover")} size="lg">
-              去发现热点 →
+              {t("去发现热点 →", "Discover trends →")}
             </Button>
           )}
         </div>

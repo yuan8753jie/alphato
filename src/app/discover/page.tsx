@@ -10,6 +10,25 @@ import {
 } from "@/lib/store";
 import type { Account, Trend, TrendSection, TrendCategory } from "@/lib/types";
 import { TREND_CATEGORY_LABELS, TREND_SECTION_LABELS } from "@/lib/types";
+import { useLang } from "@/lib/i18n";
+
+const TREND_CATEGORY_LABELS_EN: Record<TrendCategory, string> = {
+  platform_hot: "Platform Trending",
+  industry_news: "Industry News",
+  social_meme: "Social Memes",
+  sports_event: "Sports Events",
+  entertainment: "Entertainment",
+  holiday_calendar: "Holidays",
+  brand_related: "Brand Related",
+  trivia: "Trivia",
+  history_today: "This Day in History",
+};
+
+const TREND_SECTION_LABELS_EN: Record<TrendSection, string> = {
+  global: "Global Trends",
+  industry: "Industry Insights",
+  brand: "Brand Signals",
+};
 
 // Section color scheme
 const SECTION_COLORS: Record<TrendSection, { bg: string; text: string; activeBg: string; activeText: string }> = {
@@ -38,9 +57,14 @@ function isPredictive(trend: Trend): boolean {
 }
 
 function TrendCard({ trend }: { trend: Trend }) {
+  const { t, lang } = useLang();
   const section = trend.section || CATEGORY_TO_SECTION[trend.category] || "global";
   const colors = SECTION_COLORS[section];
   const predictive = isPredictive(trend);
+  const sectionLabel = lang === "en" ? TREND_SECTION_LABELS_EN[section] : TREND_SECTION_LABELS[section];
+  const categoryLabel = lang === "en"
+    ? (TREND_CATEGORY_LABELS_EN[trend.category as TrendCategory] || trend.category)
+    : (TREND_CATEGORY_LABELS[trend.category] || trend.category);
 
   return (
     <div className="relative group">
@@ -54,7 +78,7 @@ function TrendCard({ trend }: { trend: Trend }) {
           <div className="flex items-center gap-1.5 mb-1 flex-wrap">
             {predictive && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500 text-white font-semibold">
-                预测
+                {t("预测", "Forecast")}
               </span>
             )}
             {trend.warning && (
@@ -67,10 +91,10 @@ function TrendCard({ trend }: { trend: Trend }) {
         <p className="text-xs text-muted-foreground line-clamp-3 group-hover:line-clamp-none">{trend.description}</p>
         <div className="flex items-center gap-1.5 mt-2 flex-wrap">
           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${colors.bg} ${colors.text}`}>
-            {TREND_SECTION_LABELS[section]}
+            {sectionLabel}
           </span>
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-medium">
-            {TREND_CATEGORY_LABELS[trend.category] || trend.category}
+            {categoryLabel}
           </span>
           {trend.sourceUrl ? (
             <a
@@ -93,6 +117,7 @@ function TrendCard({ trend }: { trend: Trend }) {
 }
 
 export default function DiscoverPage() {
+  const { t, lang } = useLang();
   const router = useRouter();
   const [account, setAccount] = useState<Account | null>(null);
   const [trends, setTrends] = useState<Trend[]>([]);
@@ -100,6 +125,10 @@ export default function DiscoverPage() {
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<string>("all");
+  const categoryLabel = (cat: string) =>
+    lang === "en"
+      ? (TREND_CATEGORY_LABELS_EN[cat as TrendCategory] || cat)
+      : (TREND_CATEGORY_LABELS[cat as TrendCategory] || cat);
 
   useEffect(() => {
     const acc = getAccount();
@@ -132,7 +161,7 @@ export default function DiscoverPage() {
         if (categories) {
           // Replace only the refreshed categories, keep the rest
           const catSet = new Set(categories);
-          const kept = trends.filter((t) => !catSet.has(t.category));
+          const kept = trends.filter((tr) => !catSet.has(tr.category));
           const merged = [...kept, ...data.trends];
           setTrends(merged);
           saveTrends(merged);
@@ -142,13 +171,13 @@ export default function DiscoverPage() {
         }
         setTrendsDate(new Date().toISOString().split("T")[0]);
       } else {
-        setError(data.error || "未获取到热点");
+        setError(data.error || t("未获取到热点", "No hot topics fetched"));
       }
       if (data.errors?.length) {
         setError((prev) => (prev ? prev + "; " : "") + data.errors.join("; "));
       }
     } catch (err) {
-      setError("请求失败：" + String(err));
+      setError(t("请求失败：", "Request failed: ") + String(err));
     } finally {
       setLoading(null);
     }
@@ -161,15 +190,15 @@ export default function DiscoverPage() {
 
   // Build unified filter tabs: "all" + each category that exists, grouped by section
   const categoryCounts = new Map<string, { count: number; section: TrendSection }>();
-  for (const t of trends) {
-    const key = t.category;
+  for (const tr of trends) {
+    const key = tr.category;
     const existing = categoryCounts.get(key);
     if (existing) {
       existing.count++;
     } else {
       categoryCounts.set(key, {
         count: 1,
-        section: t.section || CATEGORY_TO_SECTION[t.category] || "global",
+        section: tr.section || CATEGORY_TO_SECTION[tr.category] || "global",
       });
     }
   }
@@ -184,17 +213,17 @@ export default function DiscoverPage() {
 
   const filtered = activeFilter === "all"
     ? trends
-    : trends.filter((t) => t.category === activeFilter);
+    : trends.filter((tr) => tr.category === activeFilter);
 
   return (
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-xl font-bold">发现</h1>
+          <h1 className="text-xl font-bold">{t("发现", "Discover")}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            实时热点、行业洞察、品牌信号
-            {trendsDate && <span className="ml-2">· 更新于 {trendsDate}</span>}
+            {t("实时热点、行业洞察、品牌信号", "Real-time hot topics, industry insights, brand signals")}
+            {trendsDate && <span className="ml-2">{t(`· 更新于 ${trendsDate}`, `· Updated ${trendsDate}`)}</span>}
           </p>
         </div>
         <Button
@@ -212,10 +241,10 @@ export default function DiscoverPage() {
         >
           <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
           {isLoading
-            ? "刷新中..."
+            ? t("刷新中...", "Refreshing...")
             : stale || trends.length === 0
-              ? "抓取热点"
-              : "刷新"}
+              ? t("抓取热点", "Fetch Trends")
+              : t("刷新", "Refresh")}
         </Button>
       </div>
 
@@ -230,7 +259,7 @@ export default function DiscoverPage() {
                 : "bg-muted text-muted-foreground hover:text-foreground"
             }`}
           >
-            全部 ({trends.length})
+            {t("全部", "All")} ({trends.length})
           </button>
           {sortedCategories.map(([cat, { count, section }]) => {
             const colors = SECTION_COLORS[section];
@@ -245,7 +274,7 @@ export default function DiscoverPage() {
                     : `${colors.bg} ${colors.text} hover:opacity-80`
                 }`}
               >
-                {TREND_CATEGORY_LABELS[cat as TrendCategory] || cat} ({count})
+                {categoryLabel(cat)} ({count})
               </button>
             );
           })}
@@ -264,13 +293,13 @@ export default function DiscoverPage() {
         </div>
       ) : (
         <div className="text-center py-20">
-          <h3 className="text-lg font-medium mb-2">热点池为空</h3>
+          <h3 className="text-lg font-medium mb-2">{t("热点池为空", "Hot-topic pool is empty")}</h3>
           <p className="text-sm text-muted-foreground mb-4">
-            AI 将搜索实时热搜、行业动态、体育赛事、综艺影视、品牌信号等
+            {t("AI 将搜索实时热搜、行业动态、体育赛事、综艺影视、品牌信号等", "AI will search real-time trending, industry news, sports events, entertainment, brand signals, and more")}
           </p>
           <Button onClick={() => fetchTrends()} disabled={isLoading} size="lg" className="gap-2">
             <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} />
-            {isLoading ? "正在搜索（约60秒）..." : "开始抓取热点"}
+            {isLoading ? t("正在搜索（约60秒）...", "Searching (~60s)...") : t("开始抓取热点", "Start fetching trends")}
           </Button>
         </div>
       )}

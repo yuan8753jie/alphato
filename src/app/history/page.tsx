@@ -6,12 +6,20 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getAccount, getScripts, getTopics } from "@/lib/store";
 import type { Account, Script, Topic, ScriptVariant } from "@/lib/types";
+import { useLang } from "@/lib/i18n";
 
 const VARIANT_LABEL: Record<ScriptVariant, string> = {
   "free-voiceover": "稳健·口播",
   "free-music": "稳健·音乐",
   "creative-voiceover": "创意·口播",
   "creative-music": "创意·音乐",
+};
+
+const VARIANT_LABEL_EN: Record<ScriptVariant, string> = {
+  "free-voiceover": "Steady · Voiceover",
+  "free-music": "Steady · Music",
+  "creative-voiceover": "Creative · Voiceover",
+  "creative-music": "Creative · Music",
 };
 
 const VARIANT_COLOR: Record<ScriptVariant, string> = {
@@ -33,12 +41,14 @@ function formatTime(iso: string | undefined): string {
 }
 
 export default function HistoryPage() {
+  const { t, lang } = useLang();
   const [account, setAccount] = useState<Account | null>(null);
   const [scripts, setScripts] = useState<Script[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filterProduct, setFilterProduct] = useState<string | null>(null);
   const [filterVariant, setFilterVariant] = useState<ScriptVariant | "all">("all");
+  const variantLabel = (v: ScriptVariant) => (lang === "en" ? VARIANT_LABEL_EN[v] : VARIANT_LABEL[v]);
 
   useEffect(() => {
     setAccount(getAccount());
@@ -80,7 +90,7 @@ export default function HistoryPage() {
   if (!account) {
     return (
       <div className="text-center py-20">
-        <p className="text-muted-foreground text-sm">还没有配置品牌</p>
+        <p className="text-muted-foreground text-sm">{t("还没有配置品牌", "No brand configured yet")}</p>
       </div>
     );
   }
@@ -88,20 +98,23 @@ export default function HistoryPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-xl font-bold">生成历史</h1>
+        <h1 className="text-xl font-bold">{t("生成历史", "History")}</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          当前品牌「{account.brand.name || account.name}」累计生成 {totalWithVideo} 条视频。每条记录含视频成片、发送给 Seedance 的 prompt、参考图与分镜快照。
+          {t(
+            `当前品牌「${account.brand.name || account.name}」累计生成 ${totalWithVideo} 条视频。每条记录含视频成片、发送给 Seedance 的 prompt、参考图与分镜快照。`,
+            `Brand "${account.brand.name || account.name}" has generated ${totalWithVideo} videos total. Each record includes the finished video, the prompt sent to Seedance, reference images, and scene snapshots.`,
+          )}
         </p>
       </div>
 
       {totalWithVideo === 0 ? (
         <div className="text-center py-20 max-w-md mx-auto">
-          <h3 className="text-lg font-medium mb-2">暂无生成记录</h3>
+          <h3 className="text-lg font-medium mb-2">{t("暂无生成记录", "No generations yet")}</h3>
           <p className="text-sm text-muted-foreground mb-4">
-            去选题详情页点「生成视频」，完成的成片会出现在这里。
+            {t("去选题详情页点「生成视频」，完成的成片会出现在这里。", "Click \"Generate Video\" on a topic detail page — finished videos will appear here.")}
           </p>
           <Link href="/topics">
-            <Button>去选题</Button>
+            <Button>{t("去选题", "Go to Topics")}</Button>
           </Link>
         </div>
       ) : (
@@ -109,12 +122,12 @@ export default function HistoryPage() {
           {/* 筛选 */}
           {account.products.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mr-1">产品</span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mr-1">{t("产品", "Product")}</span>
               <button
                 onClick={() => setFilterProduct(null)}
                 className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterProduct === null ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
               >
-                全部 ({totalWithVideo})
+                {t("全部", "All")} ({totalWithVideo})
               </button>
               {account.products.map((p) => {
                 const cnt = productCounts.get(p.id) || 0;
@@ -134,19 +147,19 @@ export default function HistoryPage() {
                   onClick={() => setFilterProduct("")}
                   className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterProduct === "" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
                 >
-                  通用 ({productCounts.get(null) || 0})
+                  {t("通用", "General")} ({productCounts.get(null) || 0})
                 </button>
               )}
             </div>
           )}
 
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mr-1">变体</span>
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mr-1">{t("变体", "Variant")}</span>
             <button
               onClick={() => setFilterVariant("all")}
               className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterVariant === "all" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
             >
-              全部
+              {t("全部", "All")}
             </button>
             {(Object.keys(VARIANT_LABEL) as ScriptVariant[]).map((v) => (
               <button
@@ -154,7 +167,7 @@ export default function HistoryPage() {
                 onClick={() => setFilterVariant(v)}
                 className={`text-xs px-2.5 py-1 rounded-md transition-colors cursor-pointer ${filterVariant === v ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}
               >
-                {VARIANT_LABEL[v]}
+                {variantLabel(v)}
               </button>
             ))}
           </div>
@@ -181,7 +194,7 @@ export default function HistoryPage() {
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {variant && (
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${VARIANT_COLOR[variant]}`}>
-                            {VARIANT_LABEL[variant]}
+                            {variantLabel(variant)}
                           </span>
                         )}
                         {productName ? (
@@ -189,31 +202,31 @@ export default function HistoryPage() {
                             {productName}
                           </span>
                         ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-slate-100 text-slate-600">通用</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-slate-100 text-slate-600">{t("通用", "General")}</span>
                         )}
                         <span className="text-[10px] text-muted-foreground ml-auto">{formatTime(s.videoGeneratedAt || s.createdAt)}</span>
                       </div>
-                      <h3 className="font-medium text-sm truncate">{s.title || topic?.title || "（无标题）"}</h3>
+                      <h3 className="font-medium text-sm truncate">{s.title || topic?.title || t("（无标题）", "(Untitled)")}</h3>
                       {s.hook && (
                         <p className="text-xs text-muted-foreground line-clamp-2">{s.hook}</p>
                       )}
                       <div className="flex items-center gap-3 text-[10px] text-muted-foreground pt-1">
-                        <span>分镜 {s.scenes?.length || 0}</span>
+                        <span>{t(`分镜 ${s.scenes?.length || 0}`, `${s.scenes?.length || 0} scenes`)}</span>
                         <span>·</span>
-                        <span>参考图 {s.videoReferenceImages?.length || 0}</span>
+                        <span>{t(`参考图 ${s.videoReferenceImages?.length || 0}`, `${s.videoReferenceImages?.length || 0} refs`)}</span>
                         <span>·</span>
-                        <span>{s.totalDuration || "—"} 秒</span>
+                        <span>{t(`${s.totalDuration || "—"} 秒`, `${s.totalDuration || "—"} s`)}</span>
                         <div className="ml-auto flex items-center gap-2">
                           {topic && (
                             <Link href={`/topics/${topic.id}`} className="text-foreground hover:underline">
-                              → 选题
+                              {t("→ 选题", "→ Topic")}
                             </Link>
                           )}
                           <button
                             onClick={() => setExpandedId(expanded ? null : s.id)}
                             className="text-foreground hover:underline cursor-pointer"
                           >
-                            {expanded ? "收起" : "详情"}
+                            {expanded ? t("收起", "Collapse") : t("详情", "Details")}
                           </button>
                         </div>
                       </div>
@@ -225,14 +238,14 @@ export default function HistoryPage() {
                     <div className="mt-4 pt-4 border-t space-y-4">
                       {s.videoPrompt && (
                         <details open className="rounded-md border bg-muted/30 p-3">
-                          <summary className="text-xs font-semibold cursor-pointer">发送给 Seedance 的完整 prompt</summary>
+                          <summary className="text-xs font-semibold cursor-pointer">{t("发送给 Seedance 的完整 prompt", "Full prompt sent to Seedance")}</summary>
                           <pre className="text-[11px] whitespace-pre-wrap mt-2 leading-relaxed font-mono">{s.videoPrompt}</pre>
                         </details>
                       )}
 
                       {(s.videoReferenceImages?.length || 0) > 0 && (
                         <div>
-                          <h4 className="text-xs font-semibold mb-2">参考图（{s.videoReferenceImages!.length} 张）</h4>
+                          <h4 className="text-xs font-semibold mb-2">{t(`参考图（${s.videoReferenceImages!.length} 张）`, `Reference images (${s.videoReferenceImages!.length})`)}</h4>
                           <div className="flex gap-2 flex-wrap">
                             {s.videoReferenceImages!.map((url, i) => (
                               <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block w-16 h-16 rounded border overflow-hidden hover:ring-2 hover:ring-primary/40 transition">
@@ -246,7 +259,7 @@ export default function HistoryPage() {
 
                       {(s.scenes?.length || 0) > 0 && (
                         <div>
-                          <h4 className="text-xs font-semibold mb-2">分镜快照（{s.scenes.length} 个）</h4>
+                          <h4 className="text-xs font-semibold mb-2">{t(`分镜快照（${s.scenes.length} 个）`, `Scene snapshots (${s.scenes.length})`)}</h4>
                           <div className="space-y-2">
                             {s.scenes.map((scene, i) => (
                               <div key={i} className="text-[11px] border-l-2 border-muted pl-3 py-1">
@@ -266,10 +279,10 @@ export default function HistoryPage() {
 
                       <div className="flex gap-3 text-xs">
                         <a href={s.videoUrl} target="_blank" rel="noopener noreferrer" className="text-foreground hover:underline">
-                          视频新窗口打开 ↗
+                          {t("视频新窗口打开 ↗", "Open video in new tab ↗")}
                         </a>
                         <a href={s.videoUrl} download className="text-foreground hover:underline">
-                          下载视频
+                          {t("下载视频", "Download video")}
                         </a>
                         {s.videoTaskId && (
                           <span className="text-muted-foreground ml-auto">Seedance taskId: <span className="font-mono">{s.videoTaskId}</span></span>
